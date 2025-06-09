@@ -1,11 +1,11 @@
 #![deny(unsafe_code, unused_must_use, clippy::pedantic, clippy::nursery)]
+#![allow(dead_code)]
 
 use serde::Deserialize;
-use serde_json::Result;
 use std::{fmt, fs::File, path::Path};
 
-const KiB: u32 = 1024;
-const MEMORY_SIZE: u32 = 64 * KiB;
+const KIB: u32 = 1024;
+const MEMORY_SIZE: u32 = 64 * KIB;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum StatusFlag {
@@ -41,31 +41,49 @@ impl Chip6502 {
         }
     }
 
-    fn run_op(&mut self) {
+    fn run_op(&mut self) -> u8 {
         let op = self.ram[self.pc as usize];
         self.pc = self.pc.wrapping_add(1);
-        match op {
+        let cycles: u8 = match op {
             0xa9 => {
                 let oper = self.ram[self.pc as usize];
                 self.a = oper;
-                if oper == 0 {
-                    self.p = self.p | StatusFlag::Zero as u8;
-                } else {
-                    self.p = self.p & !(StatusFlag::Zero as u8);
-                }
+
+                Self::register_set(&mut self.p, StatusFlag::Zero, oper == 0);
 
                 let is_negative = (oper & StatusFlag::Negative as u8) != 0;
-                if is_negative {
-                    self.p = self.p | StatusFlag::Negative as u8;
-                } else {
-                    self.p = self.p & !(StatusFlag::Negative as u8);
-                }
+                Self::register_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+                2
             }
 
-            _ => println!("OP Not Implemented"),
-        }
+            0xa2 => {
+                let oper = self.ram[self.pc as usize];
+                self.x = oper;
+                Self::register_set(&mut self.p, StatusFlag::Zero, oper == 0);
+
+                let is_negative = (oper & StatusFlag::Negative as u8) != 0;
+                Self::register_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+                2
+            }
+
+            _ => {
+                println!("OP Not Implemented");
+                0
+            }
+        };
 
         self.pc = self.pc.wrapping_add(1);
+        cycles
+    }
+
+    fn register_set(reg: &mut u8, flag: StatusFlag, value: bool) {
+        if value {
+            *reg |= flag as u8;
+        } else {
+            *reg &= !(flag as u8);
+        }
     }
 
     fn debug_state_set(&mut self, test_state: TestNES6502State) {
@@ -78,7 +96,7 @@ impl Chip6502 {
 
         for (address, value) in test_state.ram {
             assert!(address < MEMORY_SIZE as usize);
-            self.ram[address] = value
+            self.ram[address] = value;
         }
     }
     fn debug_state_get(&self, final_state: &TestNES6502State) -> TestNES6502State {
@@ -153,55 +171,55 @@ struct TestNES6502 {
 }
 
 fn main() {
-    let json_file_path = Path::new("./test/nes6502/v1/a9.json");
-    let result = File::open(json_file_path);
-    match result {
-        Ok(file) => {
-            let result: Result<Vec<TestNES6502>> = serde_json::from_reader(file);
-            match result {
-                Ok(tests) => {
-                    for test in tests {
-                        println!("Running Test: {0}", test.name);
-                        let mut chip = Chip6502::power_up();
-                        chip.debug_state_set(test.initial);
-                        chip.run_op();
-                        let result_state = chip.debug_state_get(&test.r#final);
+    let opcode_to_test: Vec<String> = vec!["a9".to_string(), "a2".to_string()];
+    for opcode in opcode_to_test {
+        println!("Running Test: {opcode}");
+        let file_path = format!("./test/nes6502/v1/{opcode}.json");
+        let json_file_path = Path::new(&file_path);
 
-                        assert_eq!(result_state.a, test.r#final.a, "A Reg is not Equal");
-                        assert_eq!(result_state.x, test.r#final.x, "X Reg is not Equal");
-                        assert_eq!(result_state.y, test.r#final.y, "Y Reg is not Equal");
-                        assert_eq!(result_state.s, test.r#final.s, "S Reg is not Equal");
-                        assert_eq!(result_state.p, test.r#final.p, "P Reg is not Equal");
-                        assert_eq!(result_state.pc, test.r#final.pc, "PC Reg is not Equal");
+        let file = match File::open(json_file_path) {
+            Ok(f) => f,
+            Err(e) => panic!("File Error: Could not open the test data file. Reason: {e}",),
+        };
 
-                        for (final_address, final_value) in &test.r#final.ram {
-                            let mut found: bool = false;
-                            for (address, value) in &result_state.ram {
-                                if address == final_address {
-                                    assert_eq!(value, final_value);
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            assert!(
-                                found == true,
-                                "Not Found address: {0} value: {1}",
-                                final_address,
-                                final_value
-                            );
-                        }
-                        assert_eq!(result_state.p, test.r#final.p);
+        let tests: Vec<TestNES6502> = match serde_json::from_reader(file) {
+            Ok(t) => t,
+            Err(e) => panic!("File Error: Could not open the test data file. Reason: {e}",),
+        };
+
+        for test in tests {
+            let mut chip = Chip6502::power_up();
+            chip.debug_state_set(test.initial);
+            let cycles = chip.run_op();
+            let result_state = chip.debug_state_get(&test.r#final);
+
+            assert_eq!(result_state.a, test.r#final.a, "A Reg is not Equal");
+            assert_eq!(result_state.x, test.r#final.x, "X Reg is not Equal");
+            assert_eq!(result_state.y, test.r#final.y, "Y Reg is not Equal");
+            assert_eq!(result_state.s, test.r#final.s, "S Reg is not Equal");
+            assert_eq!(result_state.p, test.r#final.p, "P Reg is not Equal");
+            assert_eq!(result_state.pc, test.r#final.pc, "PC Reg is not Equal");
+            assert_eq!(
+                cycles as usize,
+                test.cycles.len(),
+                "Cycles Count doesn't match"
+            );
+
+            for (final_address, final_value) in &test.r#final.ram {
+                let mut found: bool = false;
+                for (address, value) in &result_state.ram {
+                    if address == final_address {
+                        assert_eq!(value, final_value);
+                        found = true;
+                        break;
                     }
                 }
-                Err(e) => {
-                    println!("Serializtion Error: {e}");
-                    return;
-                }
+                assert!(
+                    found,
+                    "Not Found address: {final_address} value: {final_value}",
+                );
             }
-        }
-        Err(e) => {
-            println!("File Error :{e}");
-            return;
+            assert_eq!(result_state.p, test.r#final.p);
         }
     }
 }
