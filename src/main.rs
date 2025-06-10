@@ -127,6 +127,22 @@ impl Chip6502 {
                 cycles
             }
 
+            0xa1 => {
+                let oper: u8 = self.ram[self.pc as usize];
+
+                let address_low: u16 = self.ram[oper.wrapping_add(self.x) as usize].into();
+                let peek: u8 = oper.wrapping_add(self.x).wrapping_add(1);
+                let address_high: u16 = self.ram[peek as usize].into();
+
+                let address: u16 = (address_high << 8) | address_low;
+                let value = self.ram[address as usize];
+
+                Self::register_load(&mut self.a, &mut self.p, value);
+
+                let cycles: u8 = 6;
+                cycles
+            }
+
             0xa2 => {
                 let value = self.ram[self.pc as usize];
                 Self::register_load(&mut self.x, &mut self.p, value);
@@ -243,7 +259,7 @@ struct TestNES6502 {
 }
 
 fn main() {
-    let opcode_to_test: Vec<&str> = vec!["a9", "a2", "a5", "b5", "ad", "bd", "b9"];
+    let opcode_to_test: Vec<&str> = vec!["a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1"];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
         let file_path = format!("./test/nes6502/v1/{opcode}.json");
