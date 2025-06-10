@@ -46,25 +46,90 @@ impl Chip6502 {
         self.pc = self.pc.wrapping_add(1);
         let cycles: u8 = match op {
             0xa9 => {
-                let oper = self.ram[self.pc as usize];
-                self.a = oper;
-
-                Self::register_set(&mut self.p, StatusFlag::Zero, oper == 0);
-
-                let is_negative = (oper & StatusFlag::Negative as u8) != 0;
-                Self::register_set(&mut self.p, StatusFlag::Negative, is_negative);
+                let value = self.ram[self.pc as usize];
+                Self::register_load(&mut self.a, &mut self.p, value);
 
                 2
             }
 
-            0xa2 => {
+            0xa5 => {
                 let oper = self.ram[self.pc as usize];
-                self.x = oper;
-                Self::register_set(&mut self.p, StatusFlag::Zero, oper == 0);
+                let value = self.ram[oper as usize];
+                Self::register_load(&mut self.a, &mut self.p, value);
 
-                let is_negative = (oper & StatusFlag::Negative as u8) != 0;
-                Self::register_set(&mut self.p, StatusFlag::Negative, is_negative);
+                3
+            }
 
+            0xb5 => {
+                let oper = self.ram[self.pc as usize];
+                let address = self.x.wrapping_add(oper);
+                let value = self.ram[address as usize];
+
+                Self::register_load(&mut self.a, &mut self.p, value);
+
+                4
+            }
+            0xad => {
+                let oper_low: u16 = self.ram[self.pc as usize].into();
+                self.pc = self.pc.wrapping_add(1);
+                let oper_high: u16 = self.ram[self.pc as usize].into();
+                let address_absolute: u16 = (oper_high << 8) | oper_low;
+                let value = self.ram[address_absolute as usize];
+
+                Self::register_load(&mut self.a, &mut self.p, value);
+
+                4
+            }
+
+            0xbd => {
+                let oper_low: u8 = self.ram[self.pc as usize];
+                self.pc = self.pc.wrapping_add(1);
+                let mut oper_high: u16 = self.ram[self.pc as usize].into();
+
+                let mut cycles: u8 = 4;
+                let oper_low: u16 = match oper_low.checked_add(self.x) {
+                    Some(o) => o.into(),
+                    None => {
+                        cycles += 1;
+                        oper_high = oper_high.wrapping_add(1);
+                        oper_low.wrapping_add(self.x).into()
+                    }
+                };
+
+                let address_absolute: u16 = (oper_high << 8) | oper_low;
+                let value = self.ram[address_absolute as usize];
+
+                Self::register_load(&mut self.a, &mut self.p, value);
+
+                cycles
+            }
+
+            0xb9 => {
+                let oper_low: u8 = self.ram[self.pc as usize];
+                self.pc = self.pc.wrapping_add(1);
+                let mut oper_high: u16 = self.ram[self.pc as usize].into();
+
+                let mut cycles: u8 = 4;
+                let oper_low: u16 = match oper_low.checked_add(self.y) {
+                    Some(o) => o.into(),
+                    None => {
+                        cycles += 1;
+                        oper_high = oper_high.wrapping_add(1);
+                        oper_low.wrapping_add(self.y).into()
+                    }
+                };
+
+                let address_absolute: u16 = (oper_high << 8) | oper_low;
+                let value = self.ram[address_absolute as usize];
+
+                Self::register_load(&mut self.a, &mut self.p, value);
+
+                cycles
+            }
+
+            0xa2 => {
+                let value = self.ram[self.pc as usize];
+                Self::register_load(&mut self.x, &mut self.p, value);
                 2
             }
 
@@ -78,7 +143,14 @@ impl Chip6502 {
         cycles
     }
 
-    fn register_set(reg: &mut u8, flag: StatusFlag, value: bool) {
+    fn register_load(register_target: &mut u8, register_flag: &mut u8, value: u8) {
+        *register_target = value;
+        Self::register_flag_set(register_flag, StatusFlag::Zero, value == 0);
+        let is_negative = (value & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(register_flag, StatusFlag::Negative, is_negative);
+    }
+
+    fn register_flag_set(reg: &mut u8, flag: StatusFlag, value: bool) {
         if value {
             *reg |= flag as u8;
         } else {
@@ -171,7 +243,7 @@ struct TestNES6502 {
 }
 
 fn main() {
-    let opcode_to_test: Vec<String> = vec!["a9".to_string(), "a2".to_string()];
+    let opcode_to_test: Vec<&str> = vec!["a9", "a2", "a5", "b5", "ad", "bd", "b9"];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
         let file_path = format!("./test/nes6502/v1/{opcode}.json");
@@ -193,6 +265,7 @@ fn main() {
             let cycles = chip.run_op();
             let result_state = chip.debug_state_get(&test.r#final);
 
+            println!("{0}", test.name);
             assert_eq!(result_state.a, test.r#final.a, "A Reg is not Equal");
             assert_eq!(result_state.x, test.r#final.x, "X Reg is not Equal");
             assert_eq!(result_state.y, test.r#final.y, "Y Reg is not Equal");
