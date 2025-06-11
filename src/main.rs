@@ -105,16 +105,9 @@ impl Chip6502 {
             }
 
             0xa1 => {
-                let oper: u8 = self.ram[self.pc as usize];
-
+                let (value, mut read_operations) = self.addressing_indexed_indirect(self.x);
+                bus_operations.append(&mut read_operations);
                 self.pc = self.pc.wrapping_add(1);
-                let address_low: u16 = self.ram[oper.wrapping_add(self.x) as usize].into();
-                let peek: u8 = oper.wrapping_add(self.x).wrapping_add(1);
-                let address_high: u16 = self.ram[peek as usize].into();
-
-                let address: u16 = (address_high << 8) | address_low;
-                let value = self.ram[address as usize];
-
                 Self::register_load(&mut self.a, &mut self.p, value);
             }
 
@@ -182,6 +175,7 @@ impl Chip6502 {
             vec![read_operand_low, read_operand_high, read_address],
         )
     }
+
     fn addressing_absolute_indexed(&mut self, register: u8) -> (u8, Vec<BusOperation>) {
         let read_operand_low = self.bus_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
@@ -222,6 +216,34 @@ impl Chip6502 {
                 )
             }
         }
+    }
+
+    fn addressing_indexed_indirect(&self, register: u8) -> (u8, Vec<BusOperation>) {
+        let read_operand = self.bus_read(self.pc);
+        let miss_read_operand = self.bus_read(read_operand.value.into());
+
+        let mut peek: u8 = read_operand.value.wrapping_add(register);
+        let read_address_low = self.bus_read(peek.into());
+
+        peek = peek.wrapping_add(1);
+        let read_address_high = self.bus_read(peek.into());
+
+        let address_low: u16 = read_address_low.value.into();
+        let address_high: u16 = read_address_high.value.into();
+        let address: u16 = (address_high << 8) | address_low;
+
+        let read_address = self.bus_read(address);
+
+        (
+            read_address.value,
+            vec![
+                read_operand,
+                miss_read_operand,
+                read_address_low,
+                read_address_high,
+                read_address,
+            ],
+        )
     }
 
     fn register_load(register_target: &mut u8, register_flag: &mut u8, value: u8) {
