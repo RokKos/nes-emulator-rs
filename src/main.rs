@@ -18,6 +18,18 @@ pub enum StatusFlag {
     Negative = 1 << 7,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum BusOperationType {
+    Read = 0,
+    Write = 1,
+}
+
+struct BusOperation {
+    memory_address: u16,
+    value: u8,
+    operation_type: BusOperationType,
+}
+
 struct Chip6502 {
     a: u8,
     x: u8,
@@ -41,95 +53,61 @@ impl Chip6502 {
         }
     }
 
-    fn run_op(&mut self) -> u8 {
-        let op = self.ram[self.pc as usize];
-        self.pc = self.pc.wrapping_add(1);
-        let cycles: u8 = match op {
-            0xa9 => {
-                let value = self.ram[self.pc as usize];
-                Self::register_load(&mut self.a, &mut self.p, value);
+    fn run_op(&mut self) -> Vec<BusOperation> {
+        let mut bus_operations: Vec<BusOperation> = Vec::new();
 
-                2
+        let read_operand: BusOperation = self.bus_read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+        let operand = read_operand.value;
+        bus_operations.push(read_operand);
+
+        match operand {
+            // LDA
+            0xa9 => {
+                let (value, read_address) = self.addressing_immediate();
+                self.pc = self.pc.wrapping_add(1);
+                bus_operations.push(read_address);
+
+                Self::register_load(&mut self.a, &mut self.p, value);
             }
 
             0xa5 => {
-                let oper = self.ram[self.pc as usize];
-                let value = self.ram[oper as usize];
+                let (value, mut read_operations) = self.addressing_zeropage();
+                self.pc = self.pc.wrapping_add(1);
+                bus_operations.append(&mut read_operations);
                 Self::register_load(&mut self.a, &mut self.p, value);
-
-                3
             }
 
             0xb5 => {
-                let oper = self.ram[self.pc as usize];
-                let address = self.x.wrapping_add(oper);
-                let value = self.ram[address as usize];
+                let (value, mut read_operations) = self.addressing_zeropage_indexed(self.x);
+                self.pc = self.pc.wrapping_add(1);
+                bus_operations.append(&mut read_operations);
 
                 Self::register_load(&mut self.a, &mut self.p, value);
-
-                4
             }
             0xad => {
-                let oper_low: u16 = self.ram[self.pc as usize].into();
-                self.pc = self.pc.wrapping_add(1);
-                let oper_high: u16 = self.ram[self.pc as usize].into();
-                let address_absolute: u16 = (oper_high << 8) | oper_low;
-                let value = self.ram[address_absolute as usize];
+                let (value, mut read_operations) = self.addressing_absolute();
+                bus_operations.append(&mut read_operations);
 
                 Self::register_load(&mut self.a, &mut self.p, value);
-
-                4
             }
 
             0xbd => {
-                let oper_low: u8 = self.ram[self.pc as usize];
-                self.pc = self.pc.wrapping_add(1);
-                let mut oper_high: u16 = self.ram[self.pc as usize].into();
-
-                let mut cycles: u8 = 4;
-                let oper_low: u16 = match oper_low.checked_add(self.x) {
-                    Some(o) => o.into(),
-                    None => {
-                        cycles += 1;
-                        oper_high = oper_high.wrapping_add(1);
-                        oper_low.wrapping_add(self.x).into()
-                    }
-                };
-
-                let address_absolute: u16 = (oper_high << 8) | oper_low;
-                let value = self.ram[address_absolute as usize];
-
+                let (value, mut read_operations) = self.addressing_absolute_indexed(self.x);
+                bus_operations.append(&mut read_operations);
                 Self::register_load(&mut self.a, &mut self.p, value);
-
-                cycles
             }
 
             0xb9 => {
-                let oper_low: u8 = self.ram[self.pc as usize];
-                self.pc = self.pc.wrapping_add(1);
-                let mut oper_high: u16 = self.ram[self.pc as usize].into();
-
-                let mut cycles: u8 = 4;
-                let oper_low: u16 = match oper_low.checked_add(self.y) {
-                    Some(o) => o.into(),
-                    None => {
-                        cycles += 1;
-                        oper_high = oper_high.wrapping_add(1);
-                        oper_low.wrapping_add(self.y).into()
-                    }
-                };
-
-                let address_absolute: u16 = (oper_high << 8) | oper_low;
-                let value = self.ram[address_absolute as usize];
-
+                let (value, mut read_operations) = self.addressing_absolute_indexed(self.y);
+                bus_operations.append(&mut read_operations);
                 Self::register_load(&mut self.a, &mut self.p, value);
-
-                cycles
             }
 
             0xa1 => {
                 let oper: u8 = self.ram[self.pc as usize];
 
+                self.pc = self.pc.wrapping_add(1);
                 let address_low: u16 = self.ram[oper.wrapping_add(self.x) as usize].into();
                 let peek: u8 = oper.wrapping_add(self.x).wrapping_add(1);
                 let address_high: u16 = self.ram[peek as usize].into();
@@ -138,25 +116,112 @@ impl Chip6502 {
                 let value = self.ram[address as usize];
 
                 Self::register_load(&mut self.a, &mut self.p, value);
-
-                let cycles: u8 = 6;
-                cycles
             }
 
             0xa2 => {
-                let value = self.ram[self.pc as usize];
+                let (value, read_address) = self.addressing_immediate();
+                bus_operations.push(read_address);
+                self.pc = self.pc.wrapping_add(1);
                 Self::register_load(&mut self.x, &mut self.p, value);
-                2
             }
 
             _ => {
-                println!("OP Not Implemented");
-                0
+                panic!("OP Not Implemented");
             }
         };
 
+        bus_operations
+    }
+
+    const fn bus_read(&self, address: u16) -> BusOperation {
+        BusOperation {
+            memory_address: address,
+            value: self.ram[address as usize],
+            operation_type: BusOperationType::Read,
+        }
+    }
+
+    const fn addressing_immediate(&self) -> (u8, BusOperation) {
+        let read_address = self.bus_read(self.pc);
+        (read_address.value, read_address)
+    }
+
+    fn addressing_zeropage(&self) -> (u8, Vec<BusOperation>) {
+        let read_operand = self.bus_read(self.pc);
+        let read_address = self.bus_read(read_operand.value.into());
+
+        (read_address.value, vec![read_operand, read_address])
+    }
+
+    fn addressing_zeropage_indexed(&self, register: u8) -> (u8, Vec<BusOperation>) {
+        let read_operand = self.bus_read(self.pc);
+        // Note(Rok Kos): This is a dummy read into zero page, before being indexed
+        let read_zeropage = self.bus_read(read_operand.value.into());
+        let zero_page_index = read_operand.value.wrapping_add(register);
+        let read_address = self.bus_read(zero_page_index.into());
+
+        (
+            read_address.value,
+            vec![read_operand, read_zeropage, read_address],
+        )
+    }
+    fn addressing_absolute(&mut self) -> (u8, Vec<BusOperation>) {
+        let read_operand_low = self.bus_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
-        cycles
+        let read_operand_high = self.bus_read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+
+        let operand_low: u16 = read_operand_low.value.into();
+        let operand_high: u16 = read_operand_high.value.into();
+        let address_absolute: u16 = (operand_high << 8) | operand_low;
+
+        let read_address = self.bus_read(address_absolute);
+
+        (
+            read_address.value,
+            vec![read_operand_low, read_operand_high, read_address],
+        )
+    }
+    fn addressing_absolute_indexed(&mut self, register: u8) -> (u8, Vec<BusOperation>) {
+        let read_operand_low = self.bus_read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+
+        let read_operand_high = self.bus_read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+
+        let mut operand_high: u16 = read_operand_high.value.into();
+        match read_operand_low.value.checked_add(register) {
+            Some(o) => {
+                let operand_low: u16 = o.into();
+                let address_absolute: u16 = (operand_high << 8) | operand_low;
+
+                let read_address = self.bus_read(address_absolute);
+
+                (
+                    read_address.value,
+                    vec![read_operand_low, read_operand_high, read_address],
+                )
+            }
+            None => {
+                let operand_low: u16 = read_operand_low.value.wrapping_add(register).into();
+
+                let address_absolute: u16 = (operand_high << 8) | operand_low;
+                let miss_read_address = self.bus_read(address_absolute);
+
+                operand_high = read_operand_high.value.wrapping_add(1).into();
+                let address_absolute: u16 = (operand_high << 8) | operand_low;
+                let read_address = self.bus_read(address_absolute);
+                (
+                    read_address.value,
+                    vec![
+                        read_operand_low,
+                        read_operand_high,
+                        miss_read_address,
+                        read_address,
+                    ],
+                )
+            }
+        }
     }
 
     fn register_load(register_target: &mut u8, register_flag: &mut u8, value: u8) {
@@ -278,7 +343,7 @@ fn main() {
         for test in tests {
             let mut chip = Chip6502::power_up();
             chip.debug_state_set(test.initial);
-            let cycles = chip.run_op();
+            let bus_operations = chip.run_op();
             let result_state = chip.debug_state_get(&test.r#final);
 
             println!("{0}", test.name);
@@ -288,11 +353,6 @@ fn main() {
             assert_eq!(result_state.s, test.r#final.s, "S Reg is not Equal");
             assert_eq!(result_state.p, test.r#final.p, "P Reg is not Equal");
             assert_eq!(result_state.pc, test.r#final.pc, "PC Reg is not Equal");
-            assert_eq!(
-                cycles as usize,
-                test.cycles.len(),
-                "Cycles Count doesn't match"
-            );
 
             for (final_address, final_value) in &test.r#final.ram {
                 let mut found: bool = false;
@@ -308,7 +368,19 @@ fn main() {
                     "Not Found address: {final_address} value: {final_value}",
                 );
             }
-            assert_eq!(result_state.p, test.r#final.p);
+
+            for (i, (address, value, bus_type)) in test.cycles.iter().enumerate() {
+                let bus_operation = &bus_operations[i];
+                assert_eq!(*address, bus_operation.memory_address);
+                assert_eq!(*value, bus_operation.value);
+                let bus_operation_type_str =
+                    if bus_operation.operation_type == BusOperationType::Read {
+                        "read"
+                    } else {
+                        "write"
+                    };
+                assert_eq!(*bus_type, bus_operation_type_str);
+            }
         }
     }
 }

@@ -6,4 +6,4 @@ cargo fmt --check
 
 cargo clippy-strict
 
-cargo watch -x 'run --features strict'
+RUST_BACKTRACE=1 cargo watch -x 'run --features strict'
