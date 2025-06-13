@@ -2,7 +2,8 @@
 #![allow(
     clippy::panic,
     clippy::missing_docs_in_private_items,
-    clippy::option_if_let_else
+    clippy::option_if_let_else,
+    clippy::too_many_lines
 )]
 
 use serde::Deserialize;
@@ -151,6 +152,35 @@ impl Chip6502 {
                 bus_operations.append(&mut read_operations);
                 Self::register_load(&mut self.x, &mut self.p, value);
             }
+            // LDY
+            0xa0 => {
+                let (value, read_address) = self.addressing_immediate();
+                bus_operations.push(read_address);
+                self.pc = self.pc.wrapping_add(1);
+                Self::register_load(&mut self.y, &mut self.p, value);
+            }
+            0xa4 => {
+                let (value, mut read_operations) = self.addressing_zeropage();
+                self.pc = self.pc.wrapping_add(1);
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.y, &mut self.p, value);
+            }
+            0xb4 => {
+                let (value, mut read_operations) = self.addressing_zeropage_indexed(self.x);
+                self.pc = self.pc.wrapping_add(1);
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.y, &mut self.p, value);
+            }
+            0xac => {
+                let (value, mut read_operations) = self.addressing_absolute();
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.y, &mut self.p, value);
+            }
+            0xbc => {
+                let (value, mut read_operations) = self.addressing_absolute_indexed(self.x);
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.y, &mut self.p, value);
+            }
 
             _ => {
                 panic!("OP Not Implemented");
@@ -162,7 +192,7 @@ impl Chip6502 {
 
     const fn bus_read(&self, address: u16) -> BusOperation {
         BusOperation {
-            address: address,
+            address,
             value: self.ram[address as usize],
             operation_type: BusOperationType::Read,
         }
@@ -406,7 +436,8 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "be", "ae", "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
+        "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad",
+        "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
