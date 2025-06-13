@@ -1,8 +1,12 @@
-#![deny(unsafe_code, unused_must_use, clippy::pedantic, clippy::nursery)]
-#![allow(dead_code)]
+#![deny(dead_code, unsafe_code, unused_must_use, clippy::all, clippy::nursery)]
+#![allow(
+    clippy::panic,
+    clippy::missing_docs_in_private_items,
+    clippy::option_if_let_else
+)]
 
 use serde::Deserialize;
-use std::{fmt, fs::File, path::Path};
+use std::{fs::File, path::Path};
 
 const KIB: u32 = 1024;
 const MEMORY_SIZE: u32 = 64 * KIB;
@@ -24,8 +28,9 @@ pub enum BusOperationType {
     Write = 1,
 }
 
+#[derive(Debug)]
 struct BusOperation {
-    memory_address: u16,
+    address: u16,
     value: u8,
     operation_type: BusOperationType,
 }
@@ -110,7 +115,14 @@ impl Chip6502 {
                 self.pc = self.pc.wrapping_add(1);
                 Self::register_load(&mut self.a, &mut self.p, value);
             }
+            0xb1 => {
+                let (value, mut read_operations) = self.addressing_indirect_indexed(self.y);
+                bus_operations.append(&mut read_operations);
+                self.pc = self.pc.wrapping_add(1);
+                Self::register_load(&mut self.a, &mut self.p, value);
+            }
 
+            // LDX
             0xa2 => {
                 let (value, read_address) = self.addressing_immediate();
                 bus_operations.push(read_address);
@@ -128,7 +140,7 @@ impl Chip6502 {
 
     const fn bus_read(&self, address: u16) -> BusOperation {
         BusOperation {
-            memory_address: address,
+            address: address,
             value: self.ram[address as usize],
             operation_type: BusOperationType::Read,
         }
@@ -184,40 +196,36 @@ impl Chip6502 {
         self.pc = self.pc.wrapping_add(1);
 
         let mut operand_high: u16 = read_operand_high.value.into();
-        match read_operand_low.value.checked_add(register) {
-            Some(o) => {
-                let operand_low: u16 = o.into();
-                let address_absolute: u16 = (operand_high << 8) | operand_low;
+        if let Some(o) = read_operand_low.value.checked_add(register) {
+            let operand_low: u16 = o.into();
+            let address_absolute: u16 = (operand_high << 8) | operand_low;
 
-                let read_address = self.bus_read(address_absolute);
+            let read_address = self.bus_read(address_absolute);
 
-                (
-                    read_address.value,
-                    vec![read_operand_low, read_operand_high, read_address],
-                )
-            }
-            None => {
-                let operand_low: u16 = read_operand_low.value.wrapping_add(register).into();
+            (
+                read_address.value,
+                vec![read_operand_low, read_operand_high, read_address],
+            )
+        } else {
+            let operand_low: u16 = read_operand_low.value.wrapping_add(register).into();
 
-                let address_absolute: u16 = (operand_high << 8) | operand_low;
-                let miss_read_address = self.bus_read(address_absolute);
+            let address_absolute: u16 = (operand_high << 8) | operand_low;
+            let miss_read_address = self.bus_read(address_absolute);
 
-                operand_high = read_operand_high.value.wrapping_add(1).into();
-                let address_absolute: u16 = (operand_high << 8) | operand_low;
-                let read_address = self.bus_read(address_absolute);
-                (
-                    read_address.value,
-                    vec![
-                        read_operand_low,
-                        read_operand_high,
-                        miss_read_address,
-                        read_address,
-                    ],
-                )
-            }
+            operand_high = read_operand_high.value.wrapping_add(1).into();
+            let address_absolute: u16 = (operand_high << 8) | operand_low;
+            let read_address = self.bus_read(address_absolute);
+            (
+                read_address.value,
+                vec![
+                    read_operand_low,
+                    read_operand_high,
+                    miss_read_address,
+                    read_address,
+                ],
+            )
         }
     }
-
     fn addressing_indexed_indirect(&self, register: u8) -> (u8, Vec<BusOperation>) {
         let read_operand = self.bus_read(self.pc);
         let miss_read_operand = self.bus_read(read_operand.value.into());
@@ -246,6 +254,60 @@ impl Chip6502 {
         )
     }
 
+    fn addressing_indirect_indexed(&self, register: u8) -> (u8, Vec<BusOperation>) {
+        let read_operand = self.bus_read(self.pc);
+
+        let read_address_low = self.bus_read(read_operand.value.into());
+
+        let read_address_high: BusOperation =
+            if let Some(address_operand_high) = read_operand.value.checked_add(1) {
+                self.bus_read(address_operand_high.into())
+            } else {
+                let address_operand_high = read_operand.value.wrapping_add(1);
+                self.bus_read(address_operand_high.into())
+            };
+
+        if let Some(address_low) = read_address_low.value.checked_add(register) {
+            let address_low: u16 = address_low.into();
+            let address_high: u16 = read_address_high.value.into();
+            let register: u16 = register.into();
+
+            let address: u16 = (address_high << 8) | address_low;
+            let read_address = self.bus_read(address);
+
+            (
+                read_address.value,
+                vec![
+                    read_operand,
+                    read_address_low,
+                    read_address_high,
+                    read_address,
+                ],
+            )
+        } else {
+            const CARRY: u16 = 1 << 8;
+            let address_low: u16 = read_address_low.value.wrapping_add(register).into();
+            let address_high: u16 = read_address_high.value.into();
+
+            let miss_address: u16 = (address_high << 8) | address_low;
+            let miss_read_address = self.bus_read(miss_address);
+
+            let address: u16 = miss_address.wrapping_add(CARRY);
+            let read_address = self.bus_read(address);
+
+            (
+                read_address.value,
+                vec![
+                    read_operand,
+                    read_address_low,
+                    read_address_high,
+                    miss_read_address,
+                    read_address,
+                ],
+            )
+        }
+    }
+
     fn register_load(register_target: &mut u8, register_flag: &mut u8, value: u8) {
         *register_target = value;
         Self::register_flag_set(register_flag, StatusFlag::Zero, value == 0);
@@ -270,7 +332,10 @@ impl Chip6502 {
         self.pc = test_state.pc;
 
         for (address, value) in test_state.ram {
-            assert!(address < MEMORY_SIZE as usize);
+            assert!(
+                address < MEMORY_SIZE as usize,
+                "Address out of bound of 64KiB"
+            );
             self.ram[address] = value;
         }
     }
@@ -279,7 +344,10 @@ impl Chip6502 {
 
         for (address, _) in &final_state.ram {
             let address = *address;
-            assert!(address < MEMORY_SIZE as usize);
+            assert!(
+                address < MEMORY_SIZE as usize,
+                "Address out of bound of 64KiB"
+            );
             let value = self.ram[address];
             ram_values.push((address, value));
         }
@@ -293,36 +361,6 @@ impl Chip6502 {
             pc: self.pc,
             ram: ram_values,
         }
-    }
-}
-
-impl fmt::Display for Chip6502 {
-    /// Formats the Chip6502 struct for display.
-    /// The output will be:
-    ///
-    /// ```text
-    /// ┌────────────────────────┐
-    /// │ 6502 CPU State         │
-    /// ├────────────────────────┤
-    /// │ PC: $8000 (32768)      │
-    /// │ A:  $42   (66)         │
-    /// │ X:  $0F   (15)         │
-    /// │ Y:  $FF   (255)        │
-    /// │ S:  $FA   (250)        │
-    /// │ P:  %00110101 (NV-BDIZC)│
-    /// └────────────────────────┘
-    /// ```
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "┌─────────────────────────┐")?;
-        writeln!(f, "│ 6502 CPU State          │")?;
-        writeln!(f, "├─────────────────────────┤")?;
-        writeln!(f, "│ PC: ${:04X} ({})        │", self.pc, self.pc)?;
-        writeln!(f, "│ A:  ${:02X}   ({})           │", self.a, self.a)?;
-        writeln!(f, "│ X:  ${:02X}   ({})           │", self.x, self.x)?;
-        writeln!(f, "│ Y:  ${:02X}   ({})           │", self.y, self.y)?;
-        writeln!(f, "│ S:  ${:02X}   ({})         │", self.s, self.s)?;
-        writeln!(f, "│ P:  %{:08b} (NV-BDIZC)│", self.p)?;
-        write!(f, "└─────────────────────────┘")
     }
 }
 
@@ -346,7 +384,7 @@ struct TestNES6502 {
 }
 
 fn main() {
-    let opcode_to_test: Vec<&str> = vec!["a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1"];
+    let opcode_to_test: Vec<&str> = vec!["b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1"];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
         let file_path = format!("./test/nes6502/v1/{opcode}.json");
@@ -380,7 +418,7 @@ fn main() {
                 let mut found: bool = false;
                 for (address, value) in &result_state.ram {
                     if address == final_address {
-                        assert_eq!(value, final_value);
+                        assert_eq!(value, final_value, "RAM Values are not the same");
                         found = true;
                         break;
                     }
@@ -393,15 +431,21 @@ fn main() {
 
             for (i, (address, value, bus_type)) in test.cycles.iter().enumerate() {
                 let bus_operation = &bus_operations[i];
-                assert_eq!(*address, bus_operation.memory_address);
-                assert_eq!(*value, bus_operation.value);
+                assert_eq!(
+                    *address, bus_operation.address,
+                    "Memory Address of Cycle not the same"
+                );
+                assert_eq!(*value, bus_operation.value, "Value of a Cycle not the same");
                 let bus_operation_type_str =
                     if bus_operation.operation_type == BusOperationType::Read {
                         "read"
                     } else {
                         "write"
                     };
-                assert_eq!(*bus_type, bus_operation_type_str);
+                assert_eq!(
+                    *bus_type, bus_operation_type_str,
+                    "Type of Cycle not the same"
+                );
             }
         }
     }
