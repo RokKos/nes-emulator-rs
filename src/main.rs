@@ -129,6 +129,28 @@ impl Chip6502 {
                 self.pc = self.pc.wrapping_add(1);
                 Self::register_load(&mut self.x, &mut self.p, value);
             }
+            0xa6 => {
+                let (value, mut read_operations) = self.addressing_zeropage();
+                self.pc = self.pc.wrapping_add(1);
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.x, &mut self.p, value);
+            }
+            0xb6 => {
+                let (value, mut read_operations) = self.addressing_zeropage_indexed(self.y);
+                self.pc = self.pc.wrapping_add(1);
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.x, &mut self.p, value);
+            }
+            0xae => {
+                let (value, mut read_operations) = self.addressing_absolute();
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.x, &mut self.p, value);
+            }
+            0xbe => {
+                let (value, mut read_operations) = self.addressing_absolute_indexed(self.y);
+                bus_operations.append(&mut read_operations);
+                Self::register_load(&mut self.x, &mut self.p, value);
+            }
 
             _ => {
                 panic!("OP Not Implemented");
@@ -270,7 +292,6 @@ impl Chip6502 {
         if let Some(address_low) = read_address_low.value.checked_add(register) {
             let address_low: u16 = address_low.into();
             let address_high: u16 = read_address_high.value.into();
-            let register: u16 = register.into();
 
             let address: u16 = (address_high << 8) | address_low;
             let read_address = self.bus_read(address);
@@ -384,7 +405,9 @@ struct TestNES6502 {
 }
 
 fn main() {
-    let opcode_to_test: Vec<&str> = vec!["b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1"];
+    let opcode_to_test: Vec<&str> = vec![
+        "be", "ae", "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
+    ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
         let file_path = format!("./test/nes6502/v1/{opcode}.json");
