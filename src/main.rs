@@ -10,9 +10,6 @@
 use serde::Deserialize;
 use std::{fs::File, path::Path};
 
-const KIB: u32 = 1024;
-const MEMORY_SIZE: u32 = 64 * KIB;
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum StatusFlag {
     Carry = 1 << 0,
@@ -73,8 +70,6 @@ pub enum Opcode {
     XXX, // Represents a truly unknown or unprocessed opcode
 }
 
-const INSTRUCTION_COUNT: u16 = 256;
-
 #[derive(Debug, Clone, Copy)]
 pub struct Instruction {
     opcode: Opcode,
@@ -93,6 +88,10 @@ impl Instruction {
 }
 
 const INSTRUCTION_XXX: Instruction = Instruction::new(Opcode::XXX, AddressingMode::Absolute, "XXX");
+
+const KIB: u32 = 1024;
+const MEMORY_SIZE: u32 = 64 * KIB;
+const INSTRUCTION_COUNT: u16 = 256;
 
 struct Chip6502 {
     a: u8,
