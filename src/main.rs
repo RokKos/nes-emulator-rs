@@ -4,11 +4,11 @@
     clippy::missing_docs_in_private_items,
     clippy::option_if_let_else,
     clippy::too_many_lines,
-    clippy::enum_glob_use
+    clippy::enum_glob_use,
+    clippy::unreachable
 )]
 
 use serde::Deserialize;
-use serde_json::value;
 use std::{fs::File, path::Path};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -76,20 +76,30 @@ pub enum Opcode {
 pub struct Instruction {
     opcode: Opcode,
     adressing_mode: AddressingMode,
+    // NOTE(Rok Kos): this is the least amount of cycles, we have this so that we
+    // can insert the dummy read or writes. Because every cycle in NES is bus operation
+    cycle_count: u8,
     format: &'static str,
 }
 
 impl Instruction {
-    const fn new(opcode: Opcode, adressing_mode: AddressingMode, format: &'static str) -> Self {
+    const fn new(
+        opcode: Opcode,
+        adressing_mode: AddressingMode,
+        cycle_count: u8,
+        format: &'static str,
+    ) -> Self {
         Self {
             opcode,
             adressing_mode,
+            cycle_count,
             format,
         }
     }
 }
 
-const INSTRUCTION_XXX: Instruction = Instruction::new(Opcode::XXX, AddressingMode::Absolute, "XXX");
+const INSTRUCTION_XXX: Instruction =
+    Instruction::new(Opcode::XXX, AddressingMode::Absolute, 1, "XXX");
 
 const KIB: u32 = 1024;
 const MEMORY_SIZE: u32 = 64 * KIB;
@@ -132,343 +142,341 @@ impl Chip6502 {
         // --- Load/Store Operations ---
 
         // LDA - Load Accumulator
-        table[0xA9] = i(LDA, Immediate, "LDA #{}");
-        table[0xA5] = i(LDA, ZeroPage, "LDA {}");
-        table[0xB5] = i(LDA, ZeroPageIndexed(X), "LDA {},X");
-        table[0xAD] = i(LDA, Absolute, "LDA {}");
-        table[0xBD] = i(LDA, AbsoluteIndexed(X), "LDA {},X");
-        table[0xB9] = i(LDA, AbsoluteIndexed(Y), "LDA {},Y");
-        table[0xA1] = i(LDA, IndexedIndirect(X), "LDA ({},X)");
-        table[0xB1] = i(LDA, IndirectIndexed(Y), "LDA ({}),Y");
+        table[0xA9] = i(LDA, Immediate, 2, "LDA #{}");
+        table[0xA5] = i(LDA, ZeroPage, 3, "LDA {}");
+        table[0xB5] = i(LDA, ZeroPageIndexed(X), 4, "LDA {},X");
+        table[0xAD] = i(LDA, Absolute, 4, "LDA {}");
+        table[0xBD] = i(LDA, AbsoluteIndexed(X), 4, "LDA {},X"); // +1 if page crossed
+        table[0xB9] = i(LDA, AbsoluteIndexed(Y), 4, "LDA {},Y"); // +1 if page crossed
+        table[0xA1] = i(LDA, IndexedIndirect(X), 6, "LDA ({},X)");
+        table[0xB1] = i(LDA, IndirectIndexed(Y), 5, "LDA ({}),Y"); // +1 if page crossed
 
         // LDX - Load X Register
-        table[0xA2] = i(LDX, Immediate, "LDX #{}");
-        table[0xA6] = i(LDX, ZeroPage, "LDX {}");
-        table[0xB6] = i(LDX, ZeroPageIndexed(Y), "LDX {},Y");
-        table[0xAE] = i(LDX, Absolute, "LDX {}");
-        table[0xBE] = i(LDX, AbsoluteIndexed(Y), "LDX {},Y");
+        table[0xA2] = i(LDX, Immediate, 2, "LDX #{}");
+        table[0xA6] = i(LDX, ZeroPage, 3, "LDX {}");
+        table[0xB6] = i(LDX, ZeroPageIndexed(Y), 4, "LDX {},Y");
+        table[0xAE] = i(LDX, Absolute, 4, "LDX {}");
+        table[0xBE] = i(LDX, AbsoluteIndexed(Y), 4, "LDX {},Y"); // +1 if page crossed
 
         // LDY - Load Y Register
-        table[0xA0] = i(LDY, Immediate, "LDY #{}");
-        table[0xA4] = i(LDY, ZeroPage, "LDY {}");
-        table[0xB4] = i(LDY, ZeroPageIndexed(X), "LDY {},X");
-        table[0xAC] = i(LDY, Absolute, "LDY {}");
-        table[0xBC] = i(LDY, AbsoluteIndexed(X), "LDY {},X");
+        table[0xA0] = i(LDY, Immediate, 2, "LDY #{}");
+        table[0xA4] = i(LDY, ZeroPage, 3, "LDY {}");
+        table[0xB4] = i(LDY, ZeroPageIndexed(X), 4, "LDY {},X");
+        table[0xAC] = i(LDY, Absolute, 4, "LDY {}");
+        table[0xBC] = i(LDY, AbsoluteIndexed(X), 4, "LDY {},X"); // +1 if page crossed
+
         // STA - Store Accumulator
-        table[0x85] = i(STA, ZeroPage, "STA {}");
-        table[0x95] = i(STA, ZeroPageIndexed(X), "STA {},X");
-        table[0x8D] = i(STA, Absolute, "STA {}");
-        table[0x9D] = i(STA, AbsoluteIndexed(X), "STA {},X");
-        table[0x99] = i(STA, AbsoluteIndexed(Y), "STA {},Y");
-        table[0x81] = i(STA, IndexedIndirect(X), "STA ({},X)");
-        table[0x91] = i(STA, IndirectIndexed(Y), "STA ({}),Y");
+        table[0x85] = i(STA, ZeroPage, 3, "STA {}");
+        table[0x95] = i(STA, ZeroPageIndexed(X), 4, "STA {},X");
+        table[0x8D] = i(STA, Absolute, 4, "STA {}");
+        table[0x9D] = i(STA, AbsoluteIndexed(X), 5, "STA {},X");
+        table[0x99] = i(STA, AbsoluteIndexed(Y), 5, "STA {},Y");
+        table[0x81] = i(STA, IndexedIndirect(X), 6, "STA ({},X)");
+        table[0x91] = i(STA, IndirectIndexed(Y), 6, "STA ({}),Y");
 
         // STX - Store X Register
-        table[0x86] = i(STX, ZeroPage, "STX {}");
-        table[0x96] = i(STX, ZeroPageIndexed(Y), "STX {},Y");
-        table[0x8E] = i(STX, Absolute, "STX {}");
+        table[0x86] = i(STX, ZeroPage, 3, "STX {}");
+        table[0x96] = i(STX, ZeroPageIndexed(Y), 4, "STX {},Y");
+        table[0x8E] = i(STX, Absolute, 4, "STX {}");
 
         // STY - Store Y Register
-        table[0x84] = i(STY, ZeroPage, "STY {}");
-        table[0x94] = i(STY, ZeroPageIndexed(X), "STY {},X");
-        table[0x8C] = i(STY, Absolute, "STY {}");
-
+        table[0x84] = i(STY, ZeroPage, 3, "STY {}");
+        table[0x94] = i(STY, ZeroPageIndexed(X), 4, "STY {},X");
+        table[0x8C] = i(STY, Absolute, 4, "STY {}");
         /*
-                // --- Arithmetic and Logical Operations ---
+            // --- Arithmetic and Logical Operations ---
 
-                // ADC - Add with Carry
-                table[0x69] = i(ADC, Immediate, "ADC #{}");
-                table[0x65] = i(ADC, ZeroPage, "ADC {}");
-                table[0x75] = i(ADC, ZeroPageIndexed(X), "ADC {},X");
-                table[0x6D] = i(ADC, Absolute, "ADC {}");
-                table[0x7D] = i(ADC, AbsoluteIndexed(X), "ADC {},X");
-                table[0x79] = i(ADC, AbsoluteIndexed(Y), "ADC {},Y");
-                table[0x61] = i(ADC, IndexedIndirect, "ADC ({},X)");
-                table[0x71] = i(ADC, IndirectIndexed, "ADC ({}),Y");
+            // ADC - Add with Carry
+            table[0x69] = i(ADC, Immediate, 2, "ADC #{}");
+            table[0x65] = i(ADC, ZeroPage, 3, "ADC {}");
+            table[0x75] = i(ADC, ZeroPageIndexed(X), 4, "ADC {},X");
+            table[0x6D] = i(ADC, Absolute, 4, "ADC {}");
+            table[0x7D] = i(ADC, AbsoluteIndexed(X), 4, "ADC {},X"); // +1 if page crossed
+            table[0x79] = i(ADC, AbsoluteIndexed(Y), 4, "ADC {},Y"); // +1 if page crossed
+            table[0x61] = i(ADC, IndexedIndirect, 6, "ADC ({},X)");
+            table[0x71] = i(ADC, IndirectIndexed, 5, "ADC ({}),Y"); // +1 if page crossed
 
-                // SBC - Subtract with Carry
-                table[0xE9] = i(SBC, Immediate, "SBC #{}");
-                table[0xE5] = i(SBC, ZeroPage, "SBC {}");
-                table[0xF5] = i(SBC, ZeroPageIndexed(X), "SBC {},X");
-                table[0xED] = i(SBC, Absolute, "SBC {}");
-                table[0xFD] = i(SBC, AbsoluteIndexed(X), "SBC {},X");
-                table[0xF9] = i(SBC, AbsoluteIndexed(Y), "SBC {},Y");
-                table[0xE1] = i(SBC, IndexedIndirect, "SBC ({},X)");
-                table[0xF1] = i(SBC, IndirectIndexed, "SBC ({}),Y");
-                table[0xEB] = i(USBC, Immediate, "SBC #{}"); // unofficial
+            // SBC - Subtract with Carry
+            table[0xE9] = i(SBC, Immediate, 2, "SBC #{}");
+            table[0xE5] = i(SBC, ZeroPage, 3, "SBC {}");
+            table[0xF5] = i(SBC, ZeroPageIndexed(X), 4, "SBC {},X");
+            table[0xED] = i(SBC, Absolute, 4, "SBC {}");
+            table[0xFD] = i(SBC, AbsoluteIndexed(X), 4, "SBC {},X"); // +1 if page crossed
+            table[0xF9] = i(SBC, AbsoluteIndexed(Y), 4, "SBC {},Y"); // +1 if page crossed
+            table[0xE1] = i(SBC, IndexedIndirect, 6, "SBC ({},X)");
+            table[0xF1] = i(SBC, IndirectIndexed, 5, "SBC ({}),Y"); // +1 if page crossed
+            table[0xEB] = i(USBC, Immediate, 2, "SBC #{}");
 
-                // AND - Logical AND
-                table[0x29] = i(AND, Immediate, "AND #{}");
-                table[0x25] = i(AND, ZeroPage, "AND {}");
-                table[0x35] = i(AND, ZeroPageIndexed(X), "AND {},X");
-                table[0x2D] = i(AND, Absolute, "AND {}");
-                table[0x3D] = i(AND, AbsoluteIndexed(X), "AND {},X");
-                table[0x39] = i(AND, AbsoluteIndexed(Y), "AND {},Y");
-                table[0x21] = i(AND, IndexedIndirect, "AND ({},X)");
-                table[0x31] = i(AND, IndirectIndexed, "AND ({}),Y");
+            // AND - Logical AND
+            table[0x29] = i(AND, Immediate, 2, "AND #{}");
+            table[0x25] = i(AND, ZeroPage, 3, "AND {}");
+            table[0x35] = i(AND, ZeroPageIndexed(X), 4, "AND {},X");
+            table[0x2D] = i(AND, Absolute, 4, "AND {}");
+            table[0x3D] = i(AND, AbsoluteIndexed(X), 4, "AND {},X"); // +1 if page crossed
+            table[0x39] = i(AND, AbsoluteIndexed(Y), 4, "AND {},Y"); // +1 if page crossed
+            table[0x21] = i(AND, IndexedIndirect, 6, "AND ({},X)");
+            table[0x31] = i(AND, IndirectIndexed, 5, "AND ({}),Y"); // +1 if page crossed
 
-                // ORA - Logical Inclusive OR
-                table[0x09] = i(ORA, Immediate, "ORA #{}");
-                table[0x05] = i(ORA, ZeroPage, "ORA {}");
-                table[0x15] = i(ORA, ZeroPageIndexed(X), "ORA {},X");
-                table[0x0D] = i(ORA, Absolute, "ORA {}");
-                table[0x1D] = i(ORA, AbsoluteIndexed(X), "ORA {},X");
-                table[0x19] = i(ORA, AbsoluteIndexed(Y), "ORA {},Y");
-                table[0x01] = i(ORA, IndexedIndirect, "ORA ({},X)");
-                table[0x11] = i(ORA, IndirectIndexed, "ORA ({}),Y");
+            // ORA - Logical Inclusive OR
+            table[0x09] = i(ORA, Immediate, 2, "ORA #{}");
+            table[0x05] = i(ORA, ZeroPage, 3, "ORA {}");
+            table[0x15] = i(ORA, ZeroPageIndexed(X), 4, "ORA {},X");
+            table[0x0D] = i(ORA, Absolute, 4, "ORA {}");
+            table[0x1D] = i(ORA, AbsoluteIndexed(X), 4, "ORA {},X"); // +1 if page crossed
+            table[0x19] = i(ORA, AbsoluteIndexed(Y), 4, "ORA {},Y"); // +1 if page crossed
+            table[0x01] = i(ORA, IndexedIndirect, 6, "ORA ({},X)");
+            table[0x11] = i(ORA, IndirectIndexed, 5, "ORA ({}),Y"); // +1 if page crossed
 
-                // EOR - Logical Exclusive OR
-                table[0x49] = i(EOR, Immediate, "EOR #{}");
-                table[0x45] = i(EOR, ZeroPage, "EOR {}");
-                table[0x55] = i(EOR, ZeroPageIndexed(X), "EOR {},X");
-                table[0x4D] = i(EOR, Absolute, "EOR {}");
-                table[0x5D] = i(EOR, AbsoluteIndexed(X), "EOR {},X");
-                table[0x59] = i(EOR, AbsoluteIndexed(Y), "EOR {},Y");
-                table[0x41] = i(EOR, IndexedIndirect, "EOR ({},X)");
-                table[0x51] = i(EOR, IndirectIndexed, "EOR ({}),Y");
+            // EOR - Logical Exclusive OR
+            table[0x49] = i(EOR, Immediate, 2, "EOR #{}");
+            table[0x45] = i(EOR, ZeroPage, 3, "EOR {}");
+            table[0x55] = i(EOR, ZeroPageIndexed(X), 4, "EOR {},X");
+            table[0x4D] = i(EOR, Absolute, 4, "EOR {}");
+            table[0x5D] = i(EOR, AbsoluteIndexed(X), 4, "EOR {},X"); // +1 if page crossed
+            table[0x59] = i(EOR, AbsoluteIndexed(Y), 4, "EOR {},Y"); // +1 if page crossed
+            table[0x41] = i(EOR, IndexedIndirect, 6, "EOR ({},X)");
+            table[0x51] = i(EOR, IndirectIndexed, 5, "EOR ({}),Y"); // +1 if page crossed
 
-                // --- Compare Operations ---
+            // --- Compare Operations ---
 
-                // CMP - Compare Accumulator
-                table[0xC9] = i(CMP, Immediate, "CMP #{}");
-                table[0xC5] = i(CMP, ZeroPage, "CMP {}");
-                table[0xD5] = i(CMP, ZeroPageIndexed(X), "CMP {},X");
-                table[0xCD] = i(CMP, Absolute, "CMP {}");
-                table[0xDD] = i(CMP, AbsoluteIndexed(X), "CMP {},X");
-                table[0xD9] = i(CMP, AbsoluteIndexed(Y), "CMP {},Y");
-                table[0xC1] = i(CMP, IndexedIndirect, "CMP ({},X)");
-                table[0xD1] = i(CMP, IndirectIndexed, "CMP ({}),Y");
+            // CMP - Compare Accumulator
+            table[0xC9] = i(CMP, Immediate, 2, "CMP #{}");
+            table[0xC5] = i(CMP, ZeroPage, 3, "CMP {}");
+            table[0xD5] = i(CMP, ZeroPageIndexed(X), 4, "CMP {},X");
+            table[0xCD] = i(CMP, Absolute, 4, "CMP {}");
+            table[0xDD] = i(CMP, AbsoluteIndexed(X), 4, "CMP {},X"); // +1 if page crossed
+            table[0xD9] = i(CMP, AbsoluteIndexed(Y), 4, "CMP {},Y"); // +1 if page crossed
+            table[0xC1] = i(CMP, IndexedIndirect, 6, "CMP ({},X)");
+            table[0xD1] = i(CMP, IndirectIndexed, 5, "CMP ({}),Y"); // +1 if page crossed
 
-                // CPX - Compare X Register
-                table[0xE0] = i(CPX, Immediate, "CPX #{}");
-                table[0xE4] = i(CPX, ZeroPage, "CPX {}");
-                table[0xEC] = i(CPX, Absolute, "CPX {}");
+            // CPX - Compare X Register
+            table[0xE0] = i(CPX, Immediate, 2, "CPX #{}");
+            table[0xE4] = i(CPX, ZeroPage, 3, "CPX {}");
+            table[0xEC] = i(CPX, Absolute, 4, "CPX {}");
 
-                // CPY - Compare Y Register
-                table[0xC0] = i(CPY, Immediate, "CPY #{}");
-                table[0xC4] = i(CPY, ZeroPage, "CPY {}");
-                table[0xCC] = i(CPY, Absolute, "CPY {}");
+            // CPY - Compare Y Register
+            table[0xC0] = i(CPY, Immediate, 2, "CPY #{}");
+            table[0xC4] = i(CPY, ZeroPage, 3, "CPY {}");
+            table[0xCC] = i(CPY, Absolute, 4, "CPY {}");
 
-                // BIT - Bit Test
-                table[0x24] = i(BIT, ZeroPage, "BIT {}");
-                table[0x2C] = i(BIT, Absolute, "BIT {}");
+            // BIT - Bit Test
+            table[0x24] = i(BIT, ZeroPage, 3, "BIT {}");
+            table[0x2C] = i(BIT, Absolute, 4, "BIT {}");
 
-                // --- Shift and Rotate Operations ---
+            // --- Shift and Rotate Operations ---
 
-                // ASL - Arithmetic Shift Left
-                table[0x0A] = i(ASL, Accumulator, "ASL A");
-                table[0x06] = i(ASL, ZeroPage, "ASL {}");
-                table[0x16] = i(ASL, ZeroPageIndexed(X), "ASL {},X");
-                table[0x0E] = i(ASL, Absolute, "ASL {}");
-                table[0x1E] = i(ASL, AbsoluteIndexed(X), "ASL {},X");
+            // ASL - Arithmetic Shift Left
+            table[0x0A] = i(ASL, Accumulator, 2, "ASL A");
+            table[0x06] = i(ASL, ZeroPage, 5, "ASL {}");
+            table[0x16] = i(ASL, ZeroPageIndexed(X), 6, "ASL {},X");
+            table[0x0E] = i(ASL, Absolute, 6, "ASL {}");
+            table[0x1E] = i(ASL, AbsoluteIndexed(X), 7, "ASL {},X");
 
-                // LSR - Logical Shift Right
-                table[0x4A] = i(LSR, Accumulator, "LSR A");
-                table[0x46] = i(LSR, ZeroPage, "LSR {}");
-                table[0x56] = i(LSR, ZeroPageIndexed(X), "LSR {},X");
-                table[0x4E] = i(LSR, Absolute, "LSR {}");
-                table[0x5E] = i(LSR, AbsoluteIndexed(X), "LSR {},X");
+            // LSR - Logical Shift Right
+            table[0x4A] = i(LSR, Accumulator, 2, "LSR A");
+            table[0x46] = i(LSR, ZeroPage, 5, "LSR {}");
+            table[0x56] = i(LSR, ZeroPageIndexed(X), 6, "LSR {},X");
+            table[0x4E] = i(LSR, Absolute, 6, "LSR {}");
+            table[0x5E] = i(LSR, AbsoluteIndexed(X), 7, "LSR {},X");
 
-                // ROL - Rotate Left
-                table[0x2A] = i(ROL, Accumulator, "ROL A");
-                table[0x26] = i(ROL, ZeroPage, "ROL {}");
-                table[0x36] = i(ROL, ZeroPageIndexed(X), "ROL {},X");
-                table[0x2E] = i(ROL, Absolute, "ROL {}");
-                table[0x3E] = i(ROL, AbsoluteIndexed(X), "ROL {},X");
+            // ROL - Rotate Left
+            table[0x2A] = i(ROL, Accumulator, 2, "ROL A");
+            table[0x26] = i(ROL, ZeroPage, 5, "ROL {}");
+            table[0x36] = i(ROL, ZeroPageIndexed(X), 6, "ROL {},X");
+            table[0x2E] = i(ROL, Absolute, 6, "ROL {}");
+            table[0x3E] = i(ROL, AbsoluteIndexed(X), 7, "ROL {},X");
 
-                // ROR - Rotate Right
-                table[0x6A] = i(ROR, Accumulator, "ROR A");
-                table[0x66] = i(ROR, ZeroPage, "ROR {}");
-                table[0x76] = i(ROR, ZeroPageIndexed(X), "ROR {},X");
-                table[0x6E] = i(ROR, Absolute, "ROR {}");
-                table[0x7E] = i(ROR, AbsoluteIndexed(X), "ROR {},X");
+            // ROR - Rotate Right
+            table[0x6A] = i(ROR, Accumulator, 2, "ROR A");
+            table[0x66] = i(ROR, ZeroPage, 5, "ROR {}");
+            table[0x76] = i(ROR, ZeroPageIndexed(X), 6, "ROR {},X");
+            table[0x6E] = i(ROR, Absolute, 6, "ROR {}");
+            table[0x7E] = i(ROR, AbsoluteIndexed(X), 7, "ROR {},X");
 
-                // --- Increment and Decrement Operations ---
+            // --- Increment and Decrement Operations ---
 
-                // INC - Increment Memory
-                table[0xE6] = i(INC, ZeroPage, "INC {}");
-                table[0xF6] = i(INC, ZeroPageIndexed(X), "INC {},X");
-                table[0xEE] = i(INC, Absolute, "INC {}");
-                table[0xFE] = i(INC, AbsoluteIndexed(X), "INC {},X");
+            // INC - Increment Memory
+            table[0xE6] = i(INC, ZeroPage, 5, "INC {}");
+            table[0xF6] = i(INC, ZeroPageIndexed(X), 6, "INC {},X");
+            table[0xEE] = i(INC, Absolute, 6, "INC {}");
+            table[0xFE] = i(INC, AbsoluteIndexed(X), 7, "INC {},X");
 
-                // DEC - Decrement Memory
-                table[0xC6] = i(DEC, ZeroPage, "DEC {}");
-                table[0xD6] = i(DEC, ZeroPageIndexed(X), "DEC {},X");
-                table[0xCE] = i(DEC, Absolute, "DEC {}");
-                table[0xDE] = i(DEC, AbsoluteIndexed(X), "DEC {},X");
+            // DEC - Decrement Memory
+            table[0xC6] = i(DEC, ZeroPage, 5, "DEC {}");
+            table[0xD6] = i(DEC, ZeroPageIndexed(X), 6, "DEC {},X");
+            table[0xCE] = i(DEC, Absolute, 6, "DEC {}");
+            table[0xDE] = i(DEC, AbsoluteIndexed(X), 7, "DEC {},X");
 
-                // INX, INY, DEX, DEY
-                table[0xE8] = i(INX, Implied, "INX");
-                table[0xC8] = i(INY, Implied, "INY");
-                table[0xCA] = i(DEX, Implied, "DEX");
-                table[0x88] = i(DEY, Implied, "DEY");
+            // INX, INY, DEX, DEY
+            table[0xE8] = i(INX, Implied, 2, "INX");
+            table[0xC8] = i(INY, Implied, 2, "INY");
+            table[0xCA] = i(DEX, Implied, 2, "DEX");
+            table[0x88] = i(DEY, Implied, 2, "DEY");
 
-                // --- Branch Operations ---
-                table[0x10] = i(BPL, Relative, "BPL {}");
-                table[0x30] = i(BMI, Relative, "BMI {}");
-                table[0x50] = i(BVC, Relative, "BVC {}");
-                table[0x70] = i(BVS, Relative, "BVS {}");
-                table[0x90] = i(BCC, Relative, "BCC {}");
-                table[0xB0] = i(BCS, Relative, "BCS {}");
-                table[0xD0] = i(BNE, Relative, "BNE {}");
-                table[0xF0] = i(BEQ, Relative, "BEQ {}");
+            // --- Branch Operations --- (cycles are for branch not taken)
+            table[0x10] = i(BPL, Relative, 2, "BPL {}"); // +1 if taken, +2 if page crossed
+            table[0x30] = i(BMI, Relative, 2, "BMI {}"); // +1 if taken, +2 if page crossed
+            table[0x50] = i(BVC, Relative, 2, "BVC {}"); // +1 if taken, +2 if page crossed
+            table[0x70] = i(BVS, Relative, 2, "BVS {}"); // +1 if taken, +2 if page crossed
+            table[0x90] = i(BCC, Relative, 2, "BCC {}"); // +1 if taken, +2 if page crossed
+            table[0xB0] = i(BCS, Relative, 2, "BCS {}"); // +1 if taken, +2 if page crossed
+            table[0xD0] = i(BNE, Relative, 2, "BNE {}"); // +1 if taken, +2 if page crossed
+            table[0xF0] = i(BEQ, Relative, 2, "BEQ {}"); // +1 if taken, +2 if page crossed
 
-                // --- Jump and Subroutine Operations ---
-                table[0x4C] = i(JMP, Absolute, "JMP {}");
-                table[0x6C] = i(JMP, Indirect, "JMP ({})");
-                table[0x20] = i(JSR, Absolute, "JSR {}");
-                table[0x60] = i(RTS, Implied, "RTS");
-                table[0x40] = i(RTI, Implied, "RTI");
+            // --- Jump and Subroutine Operations ---
+            table[0x4C] = i(JMP, Absolute, 3, "JMP {}");
+            table[0x6C] = i(JMP, Indirect, 5, "JMP ({})");
+            table[0x20] = i(JSR, Absolute, 6, "JSR {}");
+            table[0x60] = i(RTS, Implied, 6, "RTS");
+            table[0x40] = i(RTI, Implied, 6, "RTI");
 
-                // --- Register Transfer Operations ---
-                table[0xAA] = i(TAX, Implied, "TAX");
-                table[0x8A] = i(TXA, Implied, "TXA");
-                table[0xA8] = i(TAY, Implied, "TAY");
-                table[0x98] = i(TYA, Implied, "TYA");
-                table[0xBA] = i(TSX, Implied, "TSX");
-                table[0x9A] = i(TXS, Implied, "TXS");
+            // --- Register Transfer Operations ---
+            table[0xAA] = i(TAX, Implied, 2, "TAX");
+            table[0x8A] = i(TXA, Implied, 2, "TXA");
+            table[0xA8] = i(TAY, Implied, 2, "TAY");
+            table[0x98] = i(TYA, Implied, 2, "TYA");
+            table[0xBA] = i(TSX, Implied, 2, "TSX");
+            table[0x9A] = i(TXS, Implied, 2, "TXS");
 
-                // --- Stack Operations ---
-                table[0x48] = i(PHA, Implied, "PHA");
-                table[0x68] = i(PLA, Implied, "PLA");
-                table[0x08] = i(PHP, Implied, "PHP");
-                table[0x28] = i(PLP, Implied, "PLP");
+            // --- Stack Operations ---
+            table[0x48] = i(PHA, Implied, 3, "PHA");
+            table[0x68] = i(PLA, Implied, 4, "PLA");
+            table[0x08] = i(PHP, Implied, 3, "PHP");
+            table[0x28] = i(PLP, Implied, 4, "PLP");
 
-                // --- Status Flag Operations ---
-                table[0x18] = i(CLC, Implied, "CLC");
-                table[0x38] = i(SEC, Implied, "SEC");
-                table[0x58] = i(CLI, Implied, "CLI");
-                table[0x78] = i(SEI, Implied, "SEI");
-                table[0xB8] = i(CLV, Implied, "CLV");
-                table[0xD8] = i(CLD, Implied, "CLD");
-                table[0xF8] = i(SED, Implied, "SED");
+            // --- Status Flag Operations ---
+            table[0x18] = i(CLC, Implied, 2, "CLC");
+            table[0x38] = i(SEC, Implied, 2, "SEC");
+            table[0x58] = i(CLI, Implied, 2, "CLI");
+            table[0x78] = i(SEI, Implied, 2, "SEI");
+            table[0xB8] = i(CLV, Implied, 2, "CLV");
+            table[0xD8] = i(CLD, Implied, 2, "CLD");
+            table[0xF8] = i(SED, Implied, 2, "SED");
 
-                // --- System and NOP ---
-                table[0x00] = i(BRK, Implied, "BRK");
-                table[0xEA] = i(NOP, Implied, "NOP");
+            // --- System and NOP ---
+            table[0x00] = i(BRK, Implied, 7, "BRK");
+            table[0xEA] = i(NOP, Implied, 2, "NOP");
 
-                // --- Illegal and Undocumented Opcodes ---
+        // --- Illegal and Undocumented Opcodes ---
 
-                // SLO (ASL + ORA)
-                table[0x07] = i(SLO, ZeroPage, "SLO {}");
-                table[0x17] = i(SLO, ZeroPageIndexed(X), "SLO {},X");
-                table[0x0F] = i(SLO, Absolute, "SLO {}");
-                table[0x1F] = i(SLO, AbsoluteIndexed(X), "SLO {},X");
-                table[0x1B] = i(SLO, AbsoluteIndexed(Y), "SLO {},Y");
-                table[0x03] = i(SLO, IndexedIndirect, "SLO ({},X)");
-                table[0x13] = i(SLO, IndirectIndexed, "SLO ({}),Y");
+        // SLO (ASL + ORA)
+        table[0x07] = i(SLO, ZeroPage, 5, "SLO {}");
+        table[0x17] = i(SLO, ZeroPageIndexed(X), 6, "SLO {},X");
+        table[0x0F] = i(SLO, Absolute, 6, "SLO {}");
+        table[0x1F] = i(SLO, AbsoluteIndexed(X), 7, "SLO {},X");
+        table[0x1B] = i(SLO, AbsoluteIndexed(Y), 7, "SLO {},Y");
+        table[0x03] = i(SLO, IndexedIndirect, 8, "SLO ({},X)");
+        table[0x13] = i(SLO, IndirectIndexed, 8, "SLO ({}),Y");
 
-                // RLA (ROL + AND)
-                table[0x27] = i(RLA, ZeroPage, "RLA {}");
-                table[0x37] = i(RLA, ZeroPageIndexed(X), "RLA {},X");
-                table[0x2F] = i(RLA, Absolute, "RLA {}");
-                table[0x3F] = i(RLA, AbsoluteIndexed(X), "RLA {},X");
-                table[0x3B] = i(RLA, AbsoluteIndexed(Y), "RLA {},Y");
-                table[0x23] = i(RLA, IndexedIndirect, "RLA ({},X)");
-                table[0x33] = i(RLA, IndirectIndexed, "RLA ({}),Y");
+        // RLA (ROL + AND)
+        table[0x27] = i(RLA, ZeroPage, 5, "RLA {}");
+        table[0x37] = i(RLA, ZeroPageIndexed(X), 6, "RLA {},X");
+        table[0x2F] = i(RLA, Absolute, 6, "RLA {}");
+        table[0x3F] = i(RLA, AbsoluteIndexed(X), 7, "RLA {},X");
+        table[0x3B] = i(RLA, AbsoluteIndexed(Y), 7, "RLA {},Y");
+        table[0x23] = i(RLA, IndexedIndirect, 8, "RLA ({},X)");
+        table[0x33] = i(RLA, IndirectIndexed, 8, "RLA ({}),Y");
 
-                // SRE (LSR + EOR)
-                table[0x47] = i(SRE, ZeroPage, "SRE {}");
-                table[0x57] = i(SRE, ZeroPageIndexed(X), "SRE {},X");
-                table[0x4F] = i(SRE, Absolute, "SRE {}");
-                table[0x5F] = i(SRE, AbsoluteIndexed(X), "SRE {},X");
-                table[0x5B] = i(SRE, AbsoluteIndexed(Y), "SRE {},Y");
-                table[0x43] = i(SRE, IndexedIndirect, "SRE ({},X)");
-                table[0x53] = i(SRE, IndirectIndexed, "SRE ({}),Y");
+        // SRE (LSR + EOR)
+        table[0x47] = i(SRE, ZeroPage, 5, "SRE {}");
+        table[0x57] = i(SRE, ZeroPageIndexed(X), 6, "SRE {},X");
+        table[0x4F] = i(SRE, Absolute, 6, "SRE {}");
+        table[0x5F] = i(SRE, AbsoluteIndexed(X), 7, "SRE {},X");
+        table[0x5B] = i(SRE, AbsoluteIndexed(Y), 7, "SRE {},Y");
+        table[0x43] = i(SRE, IndexedIndirect, 8, "SRE ({},X)");
+        table[0x53] = i(SRE, IndirectIndexed, 8, "SRE ({}),Y");
 
-                // RRA (ROR + ADC)
-                table[0x67] = i(RRA, ZeroPage, "RRA {}");
-                table[0x77] = i(RRA, ZeroPageIndexed(X), "RRA {},X");
-                table[0x6F] = i(RRA, Absolute, "RRA {}");
-                table[0x7F] = i(RRA, AbsoluteIndexed(X), "RRA {},X");
-                table[0x7B] = i(RRA, AbsoluteIndexed(Y), "RRA {},Y");
-                table[0x63] = i(RRA, IndexedIndirect, "RRA ({},X)");
-                table[0x73] = i(RRA, IndirectIndexed, "RRA ({}),Y");
+        // RRA (ROR + ADC)
+        table[0x67] = i(RRA, ZeroPage, 5, "RRA {}");
+        table[0x77] = i(RRA, ZeroPageIndexed(X), 6, "RRA {},X");
+        table[0x6F] = i(RRA, Absolute, 6, "RRA {}");
+        table[0x7F] = i(RRA, AbsoluteIndexed(X), 7, "RRA {},X");
+        table[0x7B] = i(RRA, AbsoluteIndexed(Y), 7, "RRA {},Y");
+        table[0x63] = i(RRA, IndexedIndirect, 8, "RRA ({},X)");
+        table[0x73] = i(RRA, IndirectIndexed, 8, "RRA ({}),Y");
 
-                // SAX (Store A&X)
-                table[0x87] = i(SAX, ZeroPage, "SAX {}");
-                table[0x97] = i(SAX, ZeroPageIndexed(Y), "SAX {},Y");
-                table[0x8F] = i(SAX, Absolute, "SAX {}");
-                table[0x83] = i(SAX, IndexedIndirect, "SAX ({},X)");
+        // SAX (Store A&X)
+        table[0x87] = i(SAX, ZeroPage, 3, "SAX {}");
+        table[0x97] = i(SAX, ZeroPageIndexed(Y), 4, "SAX {},Y");
+        table[0x8F] = i(SAX, Absolute, 4, "SAX {}");
+        table[0x83] = i(SAX, IndexedIndirect, 6, "SAX ({},X)");
 
-                // LAX (LDA + LDX)
-                table[0xA7] = i(LAX, ZeroPage, "LAX {}");
-                table[0xB7] = i(LAX, ZeroPageIndexed(Y), "LAX {},Y");
-                table[0xAF] = i(LAX, Absolute, "LAX {}");
-                table[0xBF] = i(LAX, AbsoluteIndexed(Y), "LAX {},Y");
-                table[0xA3] = i(LAX, IndexedIndirect, "LAX ({},X)");
-                table[0xB3] = i(LAX, IndirectIndexed, "LAX ({}),Y");
+        // LAX (LDA + LDX)
+        table[0xA7] = i(LAX, ZeroPage, 3, "LAX {}");
+        table[0xB7] = i(LAX, ZeroPageIndexed(Y), 4, "LAX {},Y");
+        table[0xAF] = i(LAX, Absolute, 4, "LAX {}");
+        table[0xBF] = i(LAX, AbsoluteIndexed(Y), 4, "LAX {},Y");
+        table[0xA3] = i(LAX, IndexedIndirect, 6, "LAX ({},X)");
+        table[0xB3] = i(LAX, IndirectIndexed, 5, "LAX ({}),Y");
 
-                // DCP (DEC + CMP)
-                table[0xC7] = i(DCP, ZeroPage, "DCP {}");
-                table[0xD7] = i(DCP, ZeroPageIndexed(X), "DCP {},X");
-                table[0xCF] = i(DCP, Absolute, "DCP {}");
-                table[0xDF] = i(DCP, AbsoluteIndexed(X), "DCP {},X");
-                table[0xDB] = i(DCP, AbsoluteIndexed(Y), "DCP {},Y");
-                table[0xC3] = i(DCP, IndexedIndirect, "DCP ({},X)");
-                table[0xD3] = i(DCP, IndirectIndexed, "DCP ({}),Y");
+        // DCP (DEC + CMP)
+        table[0xC7] = i(DCP, ZeroPage, 5, "DCP {}");
+        table[0xD7] = i(DCP, ZeroPageIndexed(X), 6, "DCP {},X");
+        table[0xCF] = i(DCP, Absolute, 6, "DCP {}");
+        table[0xDF] = i(DCP, AbsoluteIndexed(X), 7, "DCP {},X");
+        table[0xDB] = i(DCP, AbsoluteIndexed(Y), 7, "DCP {},Y");
+        table[0xC3] = i(DCP, IndexedIndirect, 8, "DCP ({},X)");
+        table[0xD3] = i(DCP, IndirectIndexed, 8, "DCP ({}),Y");
 
-                // ISC (INC + SBC)
-                table[0xE7] = i(ISC, ZeroPage, "ISC {}");
-                table[0xF7] = i(ISC, ZeroPageIndexed(X), "ISC {},X");
-                table[0xEF] = i(ISC, Absolute, "ISC {}");
-                table[0xFF] = i(ISC, AbsoluteIndexed(X), "ISC {},X");
-                table[0xFB] = i(ISC, AbsoluteIndexed(Y), "ISC {},Y");
-                table[0xE3] = i(ISC, IndexedIndirect, "ISC ({},X)");
-                table[0xF3] = i(ISC, IndirectIndexed, "ISC ({}),Y");
+        // ISC (INC + SBC)
+        table[0xE7] = i(ISC, ZeroPage, 5, "ISC {}");
+        table[0xF7] = i(ISC, ZeroPageIndexed(X), 6, "ISC {},X");
+        table[0xEF] = i(ISC, Absolute, 6, "ISC {}");
+        table[0xFF] = i(ISC, AbsoluteIndexed(X), 7, "ISC {},X");
+        table[0xFB] = i(ISC, AbsoluteIndexed(Y), 7, "ISC {},Y");
+        table[0xE3] = i(ISC, IndexedIndirect, 8, "ISC ({},X)");
+        table[0xF3] = i(ISC, IndirectIndexed, 8, "ISC ({}),Y");
 
-                // Misc Illegal Opcodes
-                table[0x0B] = i(ANC, Immediate, "ANC #{}");
-                table[0x2B] = i(ANC, Immediate, "ANC #{}");
-                table[0x4B] = i(ALR, Immediate, "ALR #{}");
-                table[0x6B] = i(ARR, Immediate, "ARR #{}");
-                table[0x8B] = i(ANE, Immediate, "ANE #{}");
-                table[0xAB] = i(LXA, Immediate, "LXA #{}");
-                table[0xCB] = i(SBX, Immediate, "SBX #{}");
+        // Misc Illegal Opcodes
+        table[0x4B] = i(ALR, Immediate, 2, "ALR #{}");
+        table[0x0B] = i(ANC, Immediate, 2, "ANC #{}");
+        table[0x2B] = i(ANC, Immediate, 2, "ANC #{}");
+        table[0x6B] = i(ARR, Immediate, 2, "ARR #{}");
+        table[0xCB] = i(SBX, Immediate, 2, "SBX #{}");
 
-                // Illegal NOPs
-                table[0x1A] = i(NOP, Implied, "NOP");
-                table[0x3A] = i(NOP, Implied, "NOP");
-                table[0x5A] = i(NOP, Implied, "NOP");
-                table[0x7A] = i(NOP, Implied, "NOP");
-                table[0xDA] = i(NOP, Implied, "NOP");
-                table[0xFA] = i(NOP, Implied, "NOP");
-                table[0x80] = i(NOP, Immediate, "NOP #{}");
-                table[0x82] = i(NOP, Immediate, "NOP #{}");
-                table[0x89] = i(NOP, Immediate, "NOP #{}");
-                table[0xC2] = i(NOP, Immediate, "NOP #{}");
-                table[0xE2] = i(NOP, Immediate, "NOP #{}");
-                table[0x04] = i(NOP, ZeroPage, "NOP {}");
-                table[0x44] = i(NOP, ZeroPage, "NOP {}");
-                table[0x64] = i(NOP, ZeroPage, "NOP {}");
-                table[0x14] = i(NOP, ZeroPageIndexed(X), "NOP {},X");
-                table[0x34] = i(NOP, ZeroPageIndexed(X), "NOP {},X");
-                table[0x54] = i(NOP, ZeroPageIndexed(X), "NOP {},X");
-                table[0x74] = i(NOP, ZeroPageIndexed(X), "NOP {},X");
-                table[0xD4] = i(NOP, ZeroPageIndexed(X), "NOP {},X");
-                table[0xF4] = i(NOP, ZeroPageIndexed(X), "NOP {},X");
-                table[0x0C] = i(NOP, Absolute, "NOP {}");
-                table[0x1C] = i(NOP, AbsoluteIndexed(X), "NOP {},X");
-                table[0x3C] = i(NOP, AbsoluteIndexed(X), "NOP {},X");
-                table[0x5C] = i(NOP, AbsoluteIndexed(X), "NOP {},X");
-                table[0x7C] = i(NOP, AbsoluteIndexed(X), "NOP {},X");
-                table[0xDC] = i(NOP, AbsoluteIndexed(X), "NOP {},X");
-                table[0xFC] = i(NOP, AbsoluteIndexed(X), "NOP {},X");
+        // Illegal NOPs
+        table[0x1A] = i(NOP, Implied, 2, "NOP");
+        table[0x3A] = i(NOP, Implied, 2, "NOP");
+        table[0x5A] = i(NOP, Implied, 2, "NOP");
+        table[0x7A] = i(NOP, Implied, 2, "NOP");
+        table[0xDA] = i(NOP, Implied, 2, "NOP");
+        table[0xFA] = i(NOP, Implied, 2, "NOP");
+        table[0x80] = i(NOP, Immediate, 2, "NOP #{}");
+        table[0x82] = i(NOP, Immediate, 2, "NOP #{}");
+        table[0x89] = i(NOP, Immediate, 2, "NOP #{}");
+        table[0xC2] = i(NOP, Immediate, 2, "NOP #{}");
+        table[0xE2] = i(NOP, Immediate, 2, "NOP #{}");
+        table[0x04] = i(NOP, ZeroPage, 3, "NOP {}");
+        table[0x44] = i(NOP, ZeroPage, 3, "NOP {}");
+        table[0x64] = i(NOP, ZeroPage, 3, "NOP {}");
+        table[0x14] = i(NOP, ZeroPageIndexed(X), 4, "NOP {},X");
+        table[0x34] = i(NOP, ZeroPageIndexed(X), 4, "NOP {},X");
+        table[0x54] = i(NOP, ZeroPageIndexed(X), 4, "NOP {},X");
+        table[0x74] = i(NOP, ZeroPageIndexed(X), 4, "NOP {},X");
+        table[0xD4] = i(NOP, ZeroPageIndexed(X), 4, "NOP {},X");
+        table[0xF4] = i(NOP, ZeroPageIndexed(X), 4, "NOP {},X");
+        table[0x0C] = i(NOP, Absolute, 4, "NOP {}");
+        table[0x1C] = i(NOP, AbsoluteIndexed(X), 4, "NOP {},X");
+        table[0x3C] = i(NOP, AbsoluteIndexed(X), 4, "NOP {},X");
+        table[0x5C] = i(NOP, AbsoluteIndexed(X), 4, "NOP {},X");
+        table[0x7C] = i(NOP, AbsoluteIndexed(X), 4, "NOP {},X");
+        table[0xDC] = i(NOP, AbsoluteIndexed(X), 4, "NOP {},X");
+        table[0xFC] = i(NOP, AbsoluteIndexed(X), 4, "NOP {},X");
 
-                // KIL (JAM/HLT) - These halt the CPU
-                table[0x02] = i(KIL, Implied, "KIL");
-                table[0x12] = i(KIL, Implied, "KIL");
-                table[0x22] = i(KIL, Implied, "KIL");
-                table[0x32] = i(KIL, Implied, "KIL");
-                table[0x42] = i(KIL, Implied, "KIL");
-                table[0x52] = i(KIL, Implied, "KIL");
-                table[0x62] = i(KIL, Implied, "KIL");
-                table[0x72] = i(KIL, Implied, "KIL");
-                table[0x92] = i(KIL, Implied, "KIL");
-                table[0xB2] = i(KIL, Implied, "KIL");
-                table[0xD2] = i(KIL, Implied, "KIL");
-                table[0xF2] = i(KIL, Implied, "KIL");
-        */
+        // KIL (JAM/HLT)
+        table[0x02] = i(KIL, Implied, 2, "KIL");
+        table[0x12] = i(KIL, Implied, 2, "KIL");
+        table[0x22] = i(KIL, Implied, 2, "KIL");
+        table[0x32] = i(KIL, Implied, 2, "KIL");
+        table[0x42] = i(KIL, Implied, 2, "KIL");
+        table[0x52] = i(KIL, Implied, 2, "KIL");
+        table[0x62] = i(KIL, Implied, 2, "KIL");
+        table[0x72] = i(KIL, Implied, 2, "KIL");
+        table[0x92] = i(KIL, Implied, 2, "KIL");
+        table[0xB2] = i(KIL, Implied, 2, "KIL");
+        table[0xD2] = i(KIL, Implied, 2, "KIL");
+        table[0xF2] = i(KIL, Implied, 2, "KIL");
+            */
         table
     }
 
@@ -499,7 +507,7 @@ impl Chip6502 {
             IndirectIndexed(X) => self.addressing_indirect_indexed(self.x),
             IndirectIndexed(Y) => self.addressing_indirect_indexed(self.y),
             ZeroPageIndexed(A) | AbsoluteIndexed(A) | IndirectIndexed(A) | IndexedIndirect(A) => {
-                panic!("This kind of addressing mode is not possible");
+                unreachable!("This kind of addressing mode is not possible")
             }
         };
 
@@ -509,6 +517,8 @@ impl Chip6502 {
         let instruction_display = instruction.format.replace("{}", &address.to_string());
         println!("{instruction_display }");
 
+        let dummy_read = self.bus_read(address);
+
         let opcode_operation = match instruction.opcode {
             LDA => self.register_load(A, address),
             LDX => self.register_load(X, address),
@@ -516,11 +526,23 @@ impl Chip6502 {
             STA => self.register_save(A, address),
             STX => self.register_save(X, address),
             STY => self.register_save(Y, address),
+            // TODO(Rok Kos): implmemen
             _ => {
-                panic!("Opcode not implemented");
+                todo!("Opcode not implemented");
             }
         };
 
+        println!(
+            "cc: {0} bl:{1}",
+            instruction.cycle_count,
+            bus_operations.len().wrapping_add(1)
+        );
+
+        if instruction.cycle_count as usize > bus_operations.len().wrapping_add(1) {
+            // NOTE(Rok Kos): Because every cycle in NES is bus operation, we insert dummy read if cycle
+            // count is not at least cycle_count
+            bus_operations.push(dummy_read);
+        }
         bus_operations.push(opcode_operation);
 
         bus_operations
@@ -772,8 +794,8 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "9d", "99", "81", "91", "86", "96", "8e",
-        "84", "94", "8b", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9", "a2",
+        "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99", "81", "91", "86", "96", "8e",
+        "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9", "a2",
         "a5", "b5", "ad", "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
@@ -822,6 +844,7 @@ fn main() {
 
             for (i, (address, value, bus_type)) in test.cycles.iter().enumerate() {
                 let bus_operation = &bus_operations[i];
+
                 assert_eq!(
                     *address, bus_operation.address,
                     "Memory Address of Cycle not the same"
