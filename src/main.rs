@@ -5,7 +5,8 @@
     clippy::option_if_let_else,
     clippy::too_many_lines,
     clippy::enum_glob_use,
-    clippy::unreachable
+    clippy::unreachable,
+    clippy::unnecessary_wraps
 )]
 
 use serde::Deserialize;
@@ -35,15 +36,17 @@ struct BusOperation {
     operation_type: BusOperationType,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Register {
     A,
     X,
     Y,
+    S,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum AddressingMode {
+    Implied,
     Immediate,
     ZeroPage,
     ZeroPageIndexed(Register),
@@ -330,14 +333,16 @@ impl Chip6502 {
             table[0x60] = i(RTS, Implied, 6, "RTS");
             table[0x40] = i(RTI, Implied, 6, "RTI");
 
-            // --- Register Transfer Operations ---
-            table[0xAA] = i(TAX, Implied, 2, "TAX");
-            table[0x8A] = i(TXA, Implied, 2, "TXA");
-            table[0xA8] = i(TAY, Implied, 2, "TAY");
-            table[0x98] = i(TYA, Implied, 2, "TYA");
-            table[0xBA] = i(TSX, Implied, 2, "TSX");
-            table[0x9A] = i(TXS, Implied, 2, "TXS");
+        */
 
+        // --- Register Transfer Operations ---
+        table[0xAA] = i(TAX, Implied, 2, "TAX");
+        table[0x8A] = i(TXA, Implied, 2, "TXA");
+        table[0xA8] = i(TAY, Implied, 2, "TAY");
+        table[0x98] = i(TYA, Implied, 2, "TYA");
+        table[0xBA] = i(TSX, Implied, 2, "TSX");
+        table[0x9A] = i(TXS, Implied, 2, "TXS");
+        /*
             // --- Stack Operations ---
             table[0x48] = i(PHA, Implied, 3, "PHA");
             table[0x68] = i(PLA, Implied, 4, "PLA");
@@ -495,6 +500,7 @@ impl Chip6502 {
         let instruction: Instruction = self.instruction_table[operand as usize];
 
         let (address, mut read_operations) = match instruction.adressing_mode {
+            Implied => self.addressing_implied(instruction.cycle_count),
             Immediate => self.addressing_immediate(),
             ZeroPage => self.addressing_zeropage(),
             ZeroPageIndexed(X) => self.addressing_zeropage_indexed(self.x),
@@ -506,7 +512,10 @@ impl Chip6502 {
             IndexedIndirect(Y) => self.addressing_indexed_indirect(self.y),
             IndirectIndexed(X) => self.addressing_indirect_indexed(self.x),
             IndirectIndexed(Y) => self.addressing_indirect_indexed(self.y),
-            ZeroPageIndexed(A) | AbsoluteIndexed(A) | IndirectIndexed(A) | IndexedIndirect(A) => {
+            ZeroPageIndexed(A | S)
+            | AbsoluteIndexed(A | S)
+            | IndirectIndexed(A | S)
+            | IndexedIndirect(A | S) => {
                 unreachable!("This kind of addressing mode is not possible")
             }
         };
@@ -526,24 +535,27 @@ impl Chip6502 {
             STA => self.register_save(A, address),
             STX => self.register_save(X, address),
             STY => self.register_save(Y, address),
+            TAX => self.register_transfer(A, X),
+            TXA => self.register_transfer(X, A),
+            TAY => self.register_transfer(A, Y),
+            TYA => self.register_transfer(Y, A),
+            TSX => self.register_transfer(S, X),
+            TXS => self.register_transfer(X, S),
             // TODO(Rok Kos): implmemen
             _ => {
                 todo!("Opcode not implemented");
             }
         };
 
-        println!(
-            "cc: {0} bl:{1}",
-            instruction.cycle_count,
-            bus_operations.len().wrapping_add(1)
-        );
-
         if instruction.cycle_count as usize > bus_operations.len().wrapping_add(1) {
             // NOTE(Rok Kos): Because every cycle in NES is bus operation, we insert dummy read if cycle
             // count is not at least cycle_count
             bus_operations.push(dummy_read);
         }
-        bus_operations.push(opcode_operation);
+
+        if let Some(opcode_operation_value) = opcode_operation {
+            bus_operations.push(opcode_operation_value);
+        }
 
         bus_operations
     }
@@ -569,6 +581,16 @@ impl Chip6502 {
         let address = self.pc;
         self.pc = self.pc.wrapping_add(1);
         (address, vec![])
+    }
+
+    fn addressing_implied(&self, cycles: u8) -> (u16, Vec<BusOperation>) {
+        let address = self.pc;
+        let mut bus_operations: Vec<BusOperation> = Vec::with_capacity(cycles as usize);
+        for _ in 0..cycles {
+            bus_operations.push(self.bus_read(address));
+        }
+
+        (address, bus_operations)
     }
 
     fn addressing_zeropage(&mut self) -> (u16, Vec<BusOperation>) {
@@ -699,7 +721,7 @@ impl Chip6502 {
         }
     }
 
-    fn register_load(&mut self, register: Register, address: u16) -> BusOperation {
+    fn register_load(&mut self, register: Register, address: u16) -> Option<BusOperation> {
         let read_address = self.bus_read(address);
         let value = read_address.value;
 
@@ -707,21 +729,51 @@ impl Chip6502 {
             Register::A => self.a = value,
             Register::X => self.x = value,
             Register::Y => self.y = value,
+            Register::S => self.s = value,
         };
 
         Self::register_flag_set(&mut self.p, StatusFlag::Zero, value == 0);
         let is_negative = (value & StatusFlag::Negative as u8) != 0;
         Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
 
-        read_address
+        Some(read_address)
     }
 
-    fn register_save(&mut self, register: Register, address: u16) -> BusOperation {
-        match register {
+    fn register_transfer(&mut self, from: Register, to: Register) -> Option<BusOperation> {
+        let value = match from {
+            Register::A => self.a,
+            Register::X => self.x,
+            Register::Y => self.y,
+            Register::S => self.s,
+        };
+
+        match to {
+            Register::A => self.a = value,
+            Register::X => self.x = value,
+            Register::Y => self.y = value,
+            Register::S => self.s = value,
+        };
+
+        dbg!(value);
+
+        if to != Register::S {
+            Self::register_flag_set(&mut self.p, StatusFlag::Zero, value == 0);
+            let is_negative = (value & StatusFlag::Negative as u8) != 0;
+            Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+        }
+
+        None
+    }
+
+    fn register_save(&mut self, register: Register, address: u16) -> Option<BusOperation> {
+        let bus_operation = match register {
             Register::A => self.bus_write(address, self.a),
             Register::X => self.bus_write(address, self.x),
             Register::Y => self.bus_write(address, self.y),
-        }
+            Register::S => self.bus_write(address, self.s),
+        };
+
+        Some(bus_operation)
     }
 
     fn register_flag_set(reg: &mut u8, flag: StatusFlag, value: bool) {
@@ -794,9 +846,9 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99", "81", "91", "86", "96", "8e",
-        "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9", "a2",
-        "a5", "b5", "ad", "bd", "b9", "a1",
+        "aa", "8a", "a8", "98", "ba", "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d",
+        "99", "81", "91", "86", "96", "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be",
+        "ae", "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
