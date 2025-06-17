@@ -238,29 +238,28 @@ impl Chip6502 {
         table[0x41] = i(EOR, IndexedIndirect(X), 6, "EOR ({},X)");
         table[0x51] = i(EOR, IndirectIndexed(Y), 5, "EOR ({}),Y"); // +1 if page crossed
 
+        // --- Compare Operations ---
+
+        // CMP - Compare Accumulator
+        table[0xC9] = i(CMP, Immediate, 2, "CMP #{}");
+        table[0xC5] = i(CMP, ZeroPage, 3, "CMP {}");
+        table[0xD5] = i(CMP, ZeroPageIndexed(X), 4, "CMP {},X");
+        table[0xCD] = i(CMP, Absolute, 4, "CMP {}");
+        table[0xDD] = i(CMP, AbsoluteIndexed(X), 4, "CMP {},X"); // +1 if page crossed
+        table[0xD9] = i(CMP, AbsoluteIndexed(Y), 4, "CMP {},Y"); // +1 if page crossed
+        table[0xC1] = i(CMP, IndexedIndirect(X), 6, "CMP ({},X)");
+        table[0xD1] = i(CMP, IndirectIndexed(Y), 5, "CMP ({}),Y"); // +1 if page crossed
+
+        // CPX - Compare X Register
+        table[0xE0] = i(CPX, Immediate, 2, "CPX #{}");
+        table[0xE4] = i(CPX, ZeroPage, 3, "CPX {}");
+        table[0xEC] = i(CPX, Absolute, 4, "CPX {}");
+
+        // CPY - Compare Y Register
+        table[0xC0] = i(CPY, Immediate, 2, "CPY #{}");
+        table[0xC4] = i(CPY, ZeroPage, 3, "CPY {}");
+        table[0xCC] = i(CPY, Absolute, 4, "CPY {}");
         /*
-            // --- Compare Operations ---
-
-            // CMP - Compare Accumulator
-            table[0xC9] = i(CMP, Immediate, 2, "CMP #{}");
-            table[0xC5] = i(CMP, ZeroPage, 3, "CMP {}");
-            table[0xD5] = i(CMP, ZeroPageIndexed(X), 4, "CMP {},X");
-            table[0xCD] = i(CMP, Absolute, 4, "CMP {}");
-            table[0xDD] = i(CMP, AbsoluteIndexed(X), 4, "CMP {},X"); // +1 if page crossed
-            table[0xD9] = i(CMP, AbsoluteIndexed(Y), 4, "CMP {},Y"); // +1 if page crossed
-            table[0xC1] = i(CMP, IndexedIndirect, 6, "CMP ({},X)");
-            table[0xD1] = i(CMP, IndirectIndexed, 5, "CMP ({}),Y"); // +1 if page crossed
-
-            // CPX - Compare X Register
-            table[0xE0] = i(CPX, Immediate, 2, "CPX #{}");
-            table[0xE4] = i(CPX, ZeroPage, 3, "CPX {}");
-            table[0xEC] = i(CPX, Absolute, 4, "CPX {}");
-
-            // CPY - Compare Y Register
-            table[0xC0] = i(CPY, Immediate, 2, "CPY #{}");
-            table[0xC4] = i(CPY, ZeroPage, 3, "CPY {}");
-            table[0xCC] = i(CPY, Absolute, 4, "CPY {}");
-
             // BIT - Bit Test
             table[0x24] = i(BIT, ZeroPage, 3, "BIT {}");
             table[0x2C] = i(BIT, Absolute, 4, "BIT {}");
@@ -547,6 +546,9 @@ impl Chip6502 {
             EOR => self.eor(address),
             ADC => self.adc(address),
             SBC => self.sbc(address),
+            CMP => self.register_compare(A, address),
+            CPX => self.register_compare(X, address),
+            CPY => self.register_compare(Y, address),
             // TODO(Rok Kos): implmemen
             _ => {
                 todo!("Opcode not implemented");
@@ -726,6 +728,27 @@ impl Chip6502 {
             )
         }
     }
+
+    fn register_compare(&mut self, register: Register, address: u16) -> Option<BusOperation> {
+        let read_address = self.bus_read(address);
+
+        let value = match register {
+            Register::A => self.a,
+            Register::X => self.x,
+            Register::Y => self.y,
+            Register::S => unreachable!("Cannot compare S register to memory"),
+        };
+
+        Self::register_flag_set(&mut self.p, StatusFlag::Carry, value >= read_address.value);
+        Self::register_flag_set(&mut self.p, StatusFlag::Zero, value == read_address.value);
+
+        let result = value.wrapping_sub(read_address.value);
+        let is_negative = (result & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+        Some(read_address)
+    }
+
     fn sbc(&mut self, address: u16) -> Option<BusOperation> {
         let read_address = self.bus_read(address);
 
@@ -933,12 +956,13 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "69", "65", "75", "6d", "7d", "79", "61", "71", "e9", "e5", "f5", "ed", "fd", "f9", "e1",
-        "f1", "49", "45", "55", "4d", "5d", "59", "41", "51", "29", "25", "35", "2d", "3d", "39",
-        "21", "31", "09", "05", "15", "0d", "1d", "19", "01", "11", "aa", "8a", "a8", "98", "ba",
-        "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99", "81", "91", "86", "96",
-        "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9",
-        "a2", "a5", "b5", "ad", "bd", "b9", "a1",
+        "c9", "c5", "d5", "cd", "dd", "d9", "c1", "d1", "e0", "e4", "ec", "c0", "c4", "cc", "69",
+        "65", "75", "6d", "7d", "79", "61", "71", "e9", "e5", "f5", "ed", "fd", "f9", "e1", "f1",
+        "49", "45", "55", "4d", "5d", "59", "41", "51", "29", "25", "35", "2d", "3d", "39", "21",
+        "31", "09", "05", "15", "0d", "1d", "19", "01", "11", "aa", "8a", "a8", "98", "ba", "9a",
+        "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99", "81", "91", "86", "96", "8e",
+        "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9", "a2",
+        "a5", "b5", "ad", "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
