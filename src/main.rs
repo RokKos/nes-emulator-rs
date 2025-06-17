@@ -347,14 +347,16 @@ impl Chip6502 {
             table[0x08] = i(PHP, Implied, 3, "PHP");
             table[0x28] = i(PLP, Implied, 4, "PLP");
 
-            // --- Status Flag Operations ---
-            table[0x18] = i(CLC, Implied, 2, "CLC");
-            table[0x38] = i(SEC, Implied, 2, "SEC");
+        */
+        // --- Status Flag Operations ---
+        table[0x18] = i(CLC, Implied, 2, "CLC");
+        table[0x38] = i(SEC, Implied, 2, "SEC");
+        table[0xB8] = i(CLV, Implied, 2, "CLV");
+        table[0xD8] = i(CLD, Implied, 2, "CLD");
+        table[0xF8] = i(SED, Implied, 2, "SED");
+        /*
             table[0x58] = i(CLI, Implied, 2, "CLI");
             table[0x78] = i(SEI, Implied, 2, "SEI");
-            table[0xB8] = i(CLV, Implied, 2, "CLV");
-            table[0xD8] = i(CLD, Implied, 2, "CLD");
-            table[0xF8] = i(SED, Implied, 2, "SED");
 
             // --- System and NOP ---
             table[0x00] = i(BRK, Implied, 7, "BRK");
@@ -549,6 +551,11 @@ impl Chip6502 {
             CMP => self.register_compare(A, address),
             CPX => self.register_compare(X, address),
             CPY => self.register_compare(Y, address),
+            CLC => self.flag_clear(StatusFlag::Carry),
+            CLD => self.flag_clear(StatusFlag::DecimalMode),
+            CLV => self.flag_clear(StatusFlag::Overflow),
+            SEC => self.flag_set(StatusFlag::Carry),
+            SED => self.flag_set(StatusFlag::DecimalMode),
             // TODO(Rok Kos): implmemen
             _ => {
                 todo!("Opcode not implemented");
@@ -885,6 +892,38 @@ impl Chip6502 {
 
         Some(bus_operation)
     }
+    fn flag_set(&mut self, flag: StatusFlag) -> Option<BusOperation> {
+        match flag {
+            StatusFlag::Carry => Self::register_flag_set(&mut self.p, flag, true),
+            StatusFlag::DecimalMode => Self::register_flag_set(&mut self.p, flag, true),
+            StatusFlag::Zero
+            | StatusFlag::Overflow
+            | StatusFlag::InterruptDisable
+            | StatusFlag::Negative
+            | StatusFlag::Break => {
+                unreachable!("Cannot clear this flag")
+            }
+        };
+
+        None
+        // Some(bus_operation)
+    }
+    fn flag_clear(&mut self, flag: StatusFlag) -> Option<BusOperation> {
+        match flag {
+            StatusFlag::Carry => Self::register_flag_set(&mut self.p, flag, false),
+            StatusFlag::DecimalMode => Self::register_flag_set(&mut self.p, flag, false),
+            StatusFlag::Overflow => Self::register_flag_set(&mut self.p, flag, false),
+            StatusFlag::Zero
+            | StatusFlag::InterruptDisable
+            | StatusFlag::Negative
+            | StatusFlag::Break => {
+                unreachable!("Cannot clear this flag")
+            }
+        };
+
+        None
+        // Some(bus_operation)
+    }
 
     fn register_flag_set(reg: &mut u8, flag: StatusFlag, value: bool) {
         if value {
@@ -956,13 +995,13 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "c9", "c5", "d5", "cd", "dd", "d9", "c1", "d1", "e0", "e4", "ec", "c0", "c4", "cc", "69",
-        "65", "75", "6d", "7d", "79", "61", "71", "e9", "e5", "f5", "ed", "fd", "f9", "e1", "f1",
-        "49", "45", "55", "4d", "5d", "59", "41", "51", "29", "25", "35", "2d", "3d", "39", "21",
-        "31", "09", "05", "15", "0d", "1d", "19", "01", "11", "aa", "8a", "a8", "98", "ba", "9a",
-        "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99", "81", "91", "86", "96", "8e",
-        "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9", "a2",
-        "a5", "b5", "ad", "bd", "b9", "a1",
+        "18", "38", "b8", "d8", "f8", "c9", "c5", "d5", "cd", "dd", "d9", "c1", "d1", "e0", "e4",
+        "ec", "c0", "c4", "cc", "69", "65", "75", "6d", "7d", "79", "61", "71", "e9", "e5", "f5",
+        "ed", "fd", "f9", "e1", "f1", "49", "45", "55", "4d", "5d", "59", "41", "51", "29", "25",
+        "35", "2d", "3d", "39", "21", "31", "09", "05", "15", "0d", "1d", "19", "01", "11", "aa",
+        "8a", "a8", "98", "ba", "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99",
+        "81", "91", "86", "96", "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae",
+        "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
