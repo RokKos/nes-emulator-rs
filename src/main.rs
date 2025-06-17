@@ -186,60 +186,59 @@ impl Chip6502 {
         table[0x84] = i(STY, ZeroPage, 3, "STY {}");
         table[0x94] = i(STY, ZeroPageIndexed(X), 4, "STY {},X");
         table[0x8C] = i(STY, Absolute, 4, "STY {}");
+        // --- Arithmetic and Logical Operations ---
+
+        // ADC - Add with Carry
+        table[0x69] = i(ADC, Immediate, 2, "ADC #{}");
+        table[0x65] = i(ADC, ZeroPage, 3, "ADC {}");
+        table[0x75] = i(ADC, ZeroPageIndexed(X), 4, "ADC {},X");
+        table[0x6D] = i(ADC, Absolute, 4, "ADC {}");
+        table[0x7D] = i(ADC, AbsoluteIndexed(X), 4, "ADC {},X"); // +1 if page crossed
+        table[0x79] = i(ADC, AbsoluteIndexed(Y), 4, "ADC {},Y"); // +1 if page crossed
+        table[0x61] = i(ADC, IndexedIndirect(X), 6, "ADC ({},X)");
+        table[0x71] = i(ADC, IndirectIndexed(Y), 5, "ADC ({}),Y"); // +1 if page crossed
+
+        // SBC - Subtract with Carry
+        table[0xE9] = i(SBC, Immediate, 2, "SBC #{}");
+        table[0xE5] = i(SBC, ZeroPage, 3, "SBC {}");
+        table[0xF5] = i(SBC, ZeroPageIndexed(X), 4, "SBC {},X");
+        table[0xED] = i(SBC, Absolute, 4, "SBC {}");
+        table[0xFD] = i(SBC, AbsoluteIndexed(X), 4, "SBC {},X"); // +1 if page crossed
+        table[0xF9] = i(SBC, AbsoluteIndexed(Y), 4, "SBC {},Y"); // +1 if page crossed
+        table[0xE1] = i(SBC, IndexedIndirect(X), 6, "SBC ({},X)");
+        table[0xF1] = i(SBC, IndirectIndexed(Y), 5, "SBC ({}),Y"); // +1 if page crossed
+
+        // AND - Logical AND
+        table[0x29] = i(AND, Immediate, 2, "AND #{}");
+        table[0x25] = i(AND, ZeroPage, 3, "AND {}");
+        table[0x35] = i(AND, ZeroPageIndexed(X), 4, "AND {},X");
+        table[0x2D] = i(AND, Absolute, 4, "AND {}");
+        table[0x3D] = i(AND, AbsoluteIndexed(X), 4, "AND {},X"); // +1 if page crossed
+        table[0x39] = i(AND, AbsoluteIndexed(Y), 4, "AND {},Y"); // +1 if page crossed
+        table[0x21] = i(AND, IndexedIndirect(X), 6, "AND ({},X)");
+        table[0x31] = i(AND, IndirectIndexed(Y), 5, "AND ({}),Y"); // +1 if page crossed
+
+        // ORA - Logical Inclusive OR
+        table[0x09] = i(ORA, Immediate, 2, "ORA #{}");
+        table[0x05] = i(ORA, ZeroPage, 3, "ORA {}");
+        table[0x15] = i(ORA, ZeroPageIndexed(X), 4, "ORA {},X");
+        table[0x0D] = i(ORA, Absolute, 4, "ORA {}");
+        table[0x1D] = i(ORA, AbsoluteIndexed(X), 4, "ORA {},X"); // +1 if page crossed
+        table[0x19] = i(ORA, AbsoluteIndexed(Y), 4, "ORA {},Y"); // +1 if page crossed
+        table[0x01] = i(ORA, IndexedIndirect(X), 6, "ORA ({},X)");
+        table[0x11] = i(ORA, IndirectIndexed(Y), 5, "ORA ({}),Y"); // +1 if page crossed
+
+        // EOR - Logical Exclusive OR
+        table[0x49] = i(EOR, Immediate, 2, "EOR #{}");
+        table[0x45] = i(EOR, ZeroPage, 3, "EOR {}");
+        table[0x55] = i(EOR, ZeroPageIndexed(X), 4, "EOR {},X");
+        table[0x4D] = i(EOR, Absolute, 4, "EOR {}");
+        table[0x5D] = i(EOR, AbsoluteIndexed(X), 4, "EOR {},X"); // +1 if page crossed
+        table[0x59] = i(EOR, AbsoluteIndexed(Y), 4, "EOR {},Y"); // +1 if page crossed
+        table[0x41] = i(EOR, IndexedIndirect(X), 6, "EOR ({},X)");
+        table[0x51] = i(EOR, IndirectIndexed(Y), 5, "EOR ({}),Y"); // +1 if page crossed
+
         /*
-            // --- Arithmetic and Logical Operations ---
-
-            // ADC - Add with Carry
-            table[0x69] = i(ADC, Immediate, 2, "ADC #{}");
-            table[0x65] = i(ADC, ZeroPage, 3, "ADC {}");
-            table[0x75] = i(ADC, ZeroPageIndexed(X), 4, "ADC {},X");
-            table[0x6D] = i(ADC, Absolute, 4, "ADC {}");
-            table[0x7D] = i(ADC, AbsoluteIndexed(X), 4, "ADC {},X"); // +1 if page crossed
-            table[0x79] = i(ADC, AbsoluteIndexed(Y), 4, "ADC {},Y"); // +1 if page crossed
-            table[0x61] = i(ADC, IndexedIndirect, 6, "ADC ({},X)");
-            table[0x71] = i(ADC, IndirectIndexed, 5, "ADC ({}),Y"); // +1 if page crossed
-
-            // SBC - Subtract with Carry
-            table[0xE9] = i(SBC, Immediate, 2, "SBC #{}");
-            table[0xE5] = i(SBC, ZeroPage, 3, "SBC {}");
-            table[0xF5] = i(SBC, ZeroPageIndexed(X), 4, "SBC {},X");
-            table[0xED] = i(SBC, Absolute, 4, "SBC {}");
-            table[0xFD] = i(SBC, AbsoluteIndexed(X), 4, "SBC {},X"); // +1 if page crossed
-            table[0xF9] = i(SBC, AbsoluteIndexed(Y), 4, "SBC {},Y"); // +1 if page crossed
-            table[0xE1] = i(SBC, IndexedIndirect, 6, "SBC ({},X)");
-            table[0xF1] = i(SBC, IndirectIndexed, 5, "SBC ({}),Y"); // +1 if page crossed
-            table[0xEB] = i(USBC, Immediate, 2, "SBC #{}");
-
-            // AND - Logical AND
-            table[0x29] = i(AND, Immediate, 2, "AND #{}");
-            table[0x25] = i(AND, ZeroPage, 3, "AND {}");
-            table[0x35] = i(AND, ZeroPageIndexed(X), 4, "AND {},X");
-            table[0x2D] = i(AND, Absolute, 4, "AND {}");
-            table[0x3D] = i(AND, AbsoluteIndexed(X), 4, "AND {},X"); // +1 if page crossed
-            table[0x39] = i(AND, AbsoluteIndexed(Y), 4, "AND {},Y"); // +1 if page crossed
-            table[0x21] = i(AND, IndexedIndirect, 6, "AND ({},X)");
-            table[0x31] = i(AND, IndirectIndexed, 5, "AND ({}),Y"); // +1 if page crossed
-
-            // ORA - Logical Inclusive OR
-            table[0x09] = i(ORA, Immediate, 2, "ORA #{}");
-            table[0x05] = i(ORA, ZeroPage, 3, "ORA {}");
-            table[0x15] = i(ORA, ZeroPageIndexed(X), 4, "ORA {},X");
-            table[0x0D] = i(ORA, Absolute, 4, "ORA {}");
-            table[0x1D] = i(ORA, AbsoluteIndexed(X), 4, "ORA {},X"); // +1 if page crossed
-            table[0x19] = i(ORA, AbsoluteIndexed(Y), 4, "ORA {},Y"); // +1 if page crossed
-            table[0x01] = i(ORA, IndexedIndirect, 6, "ORA ({},X)");
-            table[0x11] = i(ORA, IndirectIndexed, 5, "ORA ({}),Y"); // +1 if page crossed
-
-            // EOR - Logical Exclusive OR
-            table[0x49] = i(EOR, Immediate, 2, "EOR #{}");
-            table[0x45] = i(EOR, ZeroPage, 3, "EOR {}");
-            table[0x55] = i(EOR, ZeroPageIndexed(X), 4, "EOR {},X");
-            table[0x4D] = i(EOR, Absolute, 4, "EOR {}");
-            table[0x5D] = i(EOR, AbsoluteIndexed(X), 4, "EOR {},X"); // +1 if page crossed
-            table[0x59] = i(EOR, AbsoluteIndexed(Y), 4, "EOR {},Y"); // +1 if page crossed
-            table[0x41] = i(EOR, IndexedIndirect, 6, "EOR ({},X)");
-            table[0x51] = i(EOR, IndirectIndexed, 5, "EOR ({}),Y"); // +1 if page crossed
-
             // --- Compare Operations ---
 
             // CMP - Compare Accumulator
@@ -363,6 +362,8 @@ impl Chip6502 {
             table[0xEA] = i(NOP, Implied, 2, "NOP");
 
         // --- Illegal and Undocumented Opcodes ---
+
+        table[0xEB] = i(USBC, Immediate, 2, "SBC #{}");
 
         // SLO (ASL + ORA)
         table[0x07] = i(SLO, ZeroPage, 5, "SLO {}");
@@ -541,6 +542,11 @@ impl Chip6502 {
             TYA => self.register_transfer(Y, A),
             TSX => self.register_transfer(S, X),
             TXS => self.register_transfer(X, S),
+            AND => self.and(address),
+            ORA => self.or(address),
+            EOR => self.eor(address),
+            ADC => self.adc(address),
+            SBC => self.sbc(address),
             // TODO(Rok Kos): implmemen
             _ => {
                 todo!("Opcode not implemented");
@@ -720,6 +726,87 @@ impl Chip6502 {
             )
         }
     }
+    fn sbc(&mut self, address: u16) -> Option<BusOperation> {
+        let read_address = self.bus_read(address);
+
+        let (add_1, carry_1) = self.a.overflowing_sub(read_address.value);
+        let carry: u8 = u8::from((self.p & StatusFlag::Carry as u8) != 1); // Note(Rok Kos): we
+                                                                           // need to invert cary
+        let (result, carry_2) = add_1.overflowing_sub(carry);
+
+        let is_overflow = (0x80 & (result ^ self.a) & (result ^ !read_address.value)) == 0x80;
+        Self::register_flag_set(&mut self.p, StatusFlag::Overflow, is_overflow);
+
+        self.a = result;
+
+        let has_cary = carry_1 || carry_2;
+        Self::register_flag_set(&mut self.p, StatusFlag::Carry, !has_cary);
+
+        Self::register_flag_set(&mut self.p, StatusFlag::Zero, self.a == 0);
+        let is_negative = (self.a & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+        Some(read_address)
+    }
+
+    fn adc(&mut self, address: u16) -> Option<BusOperation> {
+        let read_address = self.bus_read(address);
+
+        let (add_1, carry_1) = self.a.overflowing_add(read_address.value);
+        let carry: u8 = self.p & StatusFlag::Carry as u8;
+        let (result, carry_2) = add_1.overflowing_add(carry);
+
+        let is_overflow = (0x80 & (result ^ self.a) & (result ^ read_address.value)) == 0x80;
+        Self::register_flag_set(&mut self.p, StatusFlag::Overflow, is_overflow);
+
+        self.a = result;
+
+        let has_cary = carry_1 || carry_2;
+        Self::register_flag_set(&mut self.p, StatusFlag::Carry, has_cary);
+
+        Self::register_flag_set(&mut self.p, StatusFlag::Zero, self.a == 0);
+        let is_negative = (self.a & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+        Some(read_address)
+    }
+
+    // TODO(Rok Kos): I can maybe all have in a match case
+    fn eor(&mut self, address: u16) -> Option<BusOperation> {
+        let read_address = self.bus_read(address);
+        self.a ^= read_address.value;
+        let value = self.a;
+
+        Self::register_flag_set(&mut self.p, StatusFlag::Zero, value == 0);
+        let is_negative = (value & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+        Some(read_address)
+    }
+
+    fn or(&mut self, address: u16) -> Option<BusOperation> {
+        let read_address = self.bus_read(address);
+        self.a |= read_address.value;
+        let value = self.a;
+
+        Self::register_flag_set(&mut self.p, StatusFlag::Zero, value == 0);
+        let is_negative = (value & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+        Some(read_address)
+    }
+
+    fn and(&mut self, address: u16) -> Option<BusOperation> {
+        let read_address = self.bus_read(address);
+        self.a &= read_address.value;
+        let value = self.a;
+
+        Self::register_flag_set(&mut self.p, StatusFlag::Zero, value == 0);
+        let is_negative = (value & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+
+        Some(read_address)
+    }
 
     fn register_load(&mut self, register: Register, address: u16) -> Option<BusOperation> {
         let read_address = self.bus_read(address);
@@ -846,9 +933,12 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "aa", "8a", "a8", "98", "ba", "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d",
-        "99", "81", "91", "86", "96", "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be",
-        "ae", "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
+        "69", "65", "75", "6d", "7d", "79", "61", "71", "e9", "e5", "f5", "ed", "fd", "f9", "e1",
+        "f1", "49", "45", "55", "4d", "5d", "59", "41", "51", "29", "25", "35", "2d", "3d", "39",
+        "21", "31", "09", "05", "15", "0d", "1d", "19", "01", "11", "aa", "8a", "a8", "98", "ba",
+        "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99", "81", "91", "86", "96",
+        "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9",
+        "a2", "a5", "b5", "ad", "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
@@ -876,6 +966,8 @@ fn main() {
             assert_eq!(result_state.x, test.r#final.x, "X Reg is not Equal");
             assert_eq!(result_state.y, test.r#final.y, "Y Reg is not Equal");
             assert_eq!(result_state.s, test.r#final.s, "S Reg is not Equal");
+            println!("{0:08b}", result_state.p);
+            println!("{0:08b}", test.r#final.p);
             assert_eq!(result_state.p, test.r#final.p, "P Reg is not Equal");
             assert_eq!(result_state.pc, test.r#final.pc, "PC Reg is not Equal");
 
