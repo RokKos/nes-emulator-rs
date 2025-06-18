@@ -52,8 +52,10 @@ enum AddressingMode {
     ZeroPageIndexed(Register),
     Absolute,
     AbsoluteIndexed(Register),
+    Indirect,
     IndirectIndexed(Register),
     IndexedIndirect(Register),
+    Relative,
 }
 
 #[rustfmt::skip]
@@ -314,24 +316,23 @@ impl Chip6502 {
             table[0xCA] = i(DEX, Implied, 2, "DEX");
             table[0x88] = i(DEY, Implied, 2, "DEY");
 
-            // --- Branch Operations --- (cycles are for branch not taken)
-            table[0x10] = i(BPL, Relative, 2, "BPL {}"); // +1 if taken, +2 if page crossed
-            table[0x30] = i(BMI, Relative, 2, "BMI {}"); // +1 if taken, +2 if page crossed
-            table[0x50] = i(BVC, Relative, 2, "BVC {}"); // +1 if taken, +2 if page crossed
-            table[0x70] = i(BVS, Relative, 2, "BVS {}"); // +1 if taken, +2 if page crossed
-            table[0x90] = i(BCC, Relative, 2, "BCC {}"); // +1 if taken, +2 if page crossed
-            table[0xB0] = i(BCS, Relative, 2, "BCS {}"); // +1 if taken, +2 if page crossed
-            table[0xD0] = i(BNE, Relative, 2, "BNE {}"); // +1 if taken, +2 if page crossed
-            table[0xF0] = i(BEQ, Relative, 2, "BEQ {}"); // +1 if taken, +2 if page crossed
-
-            // --- Jump and Subroutine Operations ---
-            table[0x4C] = i(JMP, Absolute, 3, "JMP {}");
-            table[0x6C] = i(JMP, Indirect, 5, "JMP ({})");
-            table[0x20] = i(JSR, Absolute, 6, "JSR {}");
-            table[0x60] = i(RTS, Implied, 6, "RTS");
-            table[0x40] = i(RTI, Implied, 6, "RTI");
-
         */
+        // --- Branch Operations --- (cycles are for branch not taken)
+        table[0x10] = i(BPL, Relative, 2, "BPL {}"); // +1 if taken, +2 if page crossed
+        table[0x30] = i(BMI, Relative, 2, "BMI {}"); // +1 if taken, +2 if page crossed
+        table[0x50] = i(BVC, Relative, 2, "BVC {}"); // +1 if taken, +2 if page crossed
+        table[0x70] = i(BVS, Relative, 2, "BVS {}"); // +1 if taken, +2 if page crossed
+        table[0x90] = i(BCC, Relative, 2, "BCC {}"); // +1 if taken, +2 if page crossed
+        table[0xB0] = i(BCS, Relative, 2, "BCS {}"); // +1 if taken, +2 if page crossed
+        table[0xD0] = i(BNE, Relative, 2, "BNE {}"); // +1 if taken, +2 if page crossed
+        table[0xF0] = i(BEQ, Relative, 2, "BEQ {}"); // +1 if taken, +2 if page crossed
+
+        // --- Jump and Subroutine Operations ---
+        table[0x4C] = i(JMP, Absolute, 3, "JMP {}");
+        table[0x6C] = i(JMP, Indirect, 5, "JMP ({})");
+        table[0x20] = i(JSR, Absolute, 6, "JSR {}");
+        table[0x60] = i(RTS, Implied, 6, "RTS");
+        table[0x40] = i(RTI, Implied, 6, "RTI");
 
         // --- Register Transfer Operations ---
         table[0xAA] = i(TAX, Implied, 2, "TAX");
@@ -504,6 +505,7 @@ impl Chip6502 {
         let (address, mut read_operations) = match instruction.adressing_mode {
             Implied => self.addressing_implied(instruction.cycle_count),
             Immediate => self.addressing_immediate(),
+            Relative => self.addressing_relative(),
             ZeroPage => self.addressing_zeropage(),
             ZeroPageIndexed(X) => self.addressing_zeropage_indexed(self.x),
             ZeroPageIndexed(Y) => self.addressing_zeropage_indexed(self.y),
@@ -512,6 +514,7 @@ impl Chip6502 {
             AbsoluteIndexed(Y) => self.addressing_absolute_indexed(self.y),
             IndexedIndirect(X) => self.addressing_indexed_indirect(self.x),
             IndexedIndirect(Y) => self.addressing_indexed_indirect(self.y),
+            Indirect => self.addressing_indirect(),
             IndirectIndexed(X) => self.addressing_indirect_indexed(self.x),
             IndirectIndexed(Y) => self.addressing_indirect_indexed(self.y),
             ZeroPageIndexed(A | S)
@@ -523,10 +526,6 @@ impl Chip6502 {
         };
 
         bus_operations.append(&mut read_operations);
-        // TODO(Rok Kos): in the future we can aughment this to also output the value of registers
-        // for better debugging
-        let instruction_display = instruction.format.replace("{}", &address.to_string());
-        println!("{instruction_display }");
 
         let dummy_read = self.bus_read(address);
 
@@ -556,6 +555,7 @@ impl Chip6502 {
             CLV => self.flag_clear(StatusFlag::Overflow),
             SEC => self.flag_set(StatusFlag::Carry),
             SED => self.flag_set(StatusFlag::DecimalMode),
+            JMP => self.jump(address),
             // TODO(Rok Kos): implmemen
             _ => {
                 todo!("Opcode not implemented");
@@ -569,7 +569,14 @@ impl Chip6502 {
         }
 
         if let Some(opcode_operation_value) = opcode_operation {
+            let instruction_display = instruction
+                .format
+                .replace("{}", &opcode_operation_value.value.to_string());
+            println!("{instruction_display }");
+
             bus_operations.push(opcode_operation_value);
+        } else {
+            println!("{}", instruction.format);
         }
 
         bus_operations
@@ -593,6 +600,12 @@ impl Chip6502 {
     }
 
     fn addressing_immediate(&mut self) -> (u16, Vec<BusOperation>) {
+        let address = self.pc;
+        self.pc = self.pc.wrapping_add(1);
+        (address, vec![])
+    }
+
+    fn addressing_relative(&mut self) -> (u16, Vec<BusOperation>) {
         let address = self.pc;
         self.pc = self.pc.wrapping_add(1);
         (address, vec![])
@@ -689,6 +702,40 @@ impl Chip6502 {
             ],
         )
     }
+    fn addressing_indirect(&mut self) -> (u16, Vec<BusOperation>) {
+        let read_operand_low = self.bus_read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+
+        let read_operand_high = self.bus_read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+
+        let operand_low: u16 = read_operand_low.value.into();
+        let operand_high: u16 = read_operand_high.value.into();
+        let address_low_pointer: u16 = (operand_high << 8) | operand_low;
+
+        let read_address_low = self.bus_read(address_low_pointer);
+
+        let operand_low: u16 = read_operand_low.value.wrapping_add(1).into();
+        let operand_high: u16 = read_operand_high.value.into();
+        let address_high_pointer: u16 = (operand_high << 8) | operand_low;
+
+        let read_address_high = self.bus_read(address_high_pointer);
+
+        let address_low: u16 = read_address_low.value.into();
+        let address_high: u16 = read_address_high.value.into();
+
+        let address: u16 = (address_high << 8) | address_low;
+
+        (
+            address,
+            vec![
+                read_operand_low,
+                read_operand_high,
+                read_address_low,
+                read_address_high,
+            ],
+        )
+    }
 
     fn addressing_indirect_indexed(&mut self, register: u8) -> (u16, Vec<BusOperation>) {
         let read_operand = self.bus_read(self.pc);
@@ -735,7 +782,10 @@ impl Chip6502 {
             )
         }
     }
-
+    fn jump(&mut self, address: u16) -> Option<BusOperation> {
+        self.pc = address;
+        None
+    }
     fn register_compare(&mut self, register: Register, address: u16) -> Option<BusOperation> {
         let read_address = self.bus_read(address);
 
@@ -894,8 +944,9 @@ impl Chip6502 {
     }
     fn flag_set(&mut self, flag: StatusFlag) -> Option<BusOperation> {
         match flag {
-            StatusFlag::Carry => Self::register_flag_set(&mut self.p, flag, true),
-            StatusFlag::DecimalMode => Self::register_flag_set(&mut self.p, flag, true),
+            StatusFlag::Carry | StatusFlag::DecimalMode => {
+                Self::register_flag_set(&mut self.p, flag, true);
+            }
             StatusFlag::Zero
             | StatusFlag::Overflow
             | StatusFlag::InterruptDisable
@@ -910,9 +961,9 @@ impl Chip6502 {
     }
     fn flag_clear(&mut self, flag: StatusFlag) -> Option<BusOperation> {
         match flag {
-            StatusFlag::Carry => Self::register_flag_set(&mut self.p, flag, false),
-            StatusFlag::DecimalMode => Self::register_flag_set(&mut self.p, flag, false),
-            StatusFlag::Overflow => Self::register_flag_set(&mut self.p, flag, false),
+            StatusFlag::Carry | StatusFlag::DecimalMode | StatusFlag::Overflow => {
+                Self::register_flag_set(&mut self.p, flag, false);
+            }
             StatusFlag::Zero
             | StatusFlag::InterruptDisable
             | StatusFlag::Negative
@@ -995,13 +1046,13 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "18", "38", "b8", "d8", "f8", "c9", "c5", "d5", "cd", "dd", "d9", "c1", "d1", "e0", "e4",
-        "ec", "c0", "c4", "cc", "69", "65", "75", "6d", "7d", "79", "61", "71", "e9", "e5", "f5",
-        "ed", "fd", "f9", "e1", "f1", "49", "45", "55", "4d", "5d", "59", "41", "51", "29", "25",
-        "35", "2d", "3d", "39", "21", "31", "09", "05", "15", "0d", "1d", "19", "01", "11", "aa",
-        "8a", "a8", "98", "ba", "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99",
-        "81", "91", "86", "96", "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae",
-        "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
+        "4c", "6c", "18", "38", "b8", "d8", "f8", "c9", "c5", "d5", "cd", "dd", "d9", "c1", "d1",
+        "e0", "e4", "ec", "c0", "c4", "cc", "69", "65", "75", "6d", "7d", "79", "61", "71", "e9",
+        "e5", "f5", "ed", "fd", "f9", "e1", "f1", "49", "45", "55", "4d", "5d", "59", "41", "51",
+        "29", "25", "35", "2d", "3d", "39", "21", "31", "09", "05", "15", "0d", "1d", "19", "01",
+        "11", "aa", "8a", "a8", "98", "ba", "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95",
+        "8d", "99", "81", "91", "86", "96", "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0",
+        "be", "ae", "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
@@ -1029,8 +1080,6 @@ fn main() {
             assert_eq!(result_state.x, test.r#final.x, "X Reg is not Equal");
             assert_eq!(result_state.y, test.r#final.y, "Y Reg is not Equal");
             assert_eq!(result_state.s, test.r#final.s, "S Reg is not Equal");
-            println!("{0:08b}", result_state.p);
-            println!("{0:08b}", test.r#final.p);
             assert_eq!(result_state.p, test.r#final.p, "P Reg is not Equal");
             assert_eq!(result_state.pc, test.r#final.pc, "PC Reg is not Equal");
 
