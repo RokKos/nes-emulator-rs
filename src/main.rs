@@ -58,6 +58,20 @@ enum AddressingMode {
     Relative,
 }
 
+// TODO(Rok Kos): implement this
+#[derive(Debug)]
+enum Address {
+    Implied,
+    Immediate(u16),
+    ZeroPage(u8),
+    ZeroPageIndexed(u8),
+    Absolute(u16),
+    AbsoluteIndexed(u16),
+    IndirectIndexed(u16),
+    IndexedIndirect(u16),
+    Relative(i8),
+}
+
 #[rustfmt::skip]
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy)]
@@ -502,6 +516,8 @@ impl Chip6502 {
 
         let instruction: Instruction = self.instruction_table[operand as usize];
 
+        // TODO(Rok Kos): Address could be of a sum type: u16, u8 or i8
+        // this would add more robust handling, as we could check if expected value is passed on
         let (address, mut read_operations) = match instruction.adressing_mode {
             Implied => self.addressing_implied(instruction.cycle_count),
             Immediate => self.addressing_immediate(),
@@ -563,6 +579,12 @@ impl Chip6502 {
             }
         };
 
+        if instruction.cycle_count as usize > bus_operations.len().wrapping_add(1) {
+            // NOTE(Rok Kos): Because every cycle in NES is bus operation, we insert dummy read if cycle
+            // count is not at least cycle_count
+            bus_operations.push(dummy_read);
+        }
+
         if opcode_operation.len() == 1 {
             let instruction_display = instruction
                 .format
@@ -573,12 +595,6 @@ impl Chip6502 {
         }
 
         bus_operations.append(&mut opcode_operation);
-
-        if instruction.cycle_count as usize > bus_operations.len().wrapping_add(1) {
-            // NOTE(Rok Kos): Because every cycle in NES is bus operation, we insert dummy read if cycle
-            // count is not at least cycle_count
-            bus_operations.push(dummy_read);
-        }
 
         bus_operations
     }
@@ -1063,13 +1079,14 @@ struct TestNES6502 {
 
 fn main() {
     let opcode_to_test: Vec<&str> = vec![
-        "20", "4c", "6c", "18", "38", "b8", "d8", "f8", "c9", "c5", "d5", "cd", "dd", "d9", "c1",
-        "d1", "e0", "e4", "ec", "c0", "c4", "cc", "69", "65", "75", "6d", "7d", "79", "61", "71",
-        "e9", "e5", "f5", "ed", "fd", "f9", "e1", "f1", "49", "45", "55", "4d", "5d", "59", "41",
-        "51", "29", "25", "35", "2d", "3d", "39", "21", "31", "09", "05", "15", "0d", "1d", "19",
-        "01", "11", "aa", "8a", "a8", "98", "ba", "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc",
-        "95", "8d", "99", "81", "91", "86", "96", "8e", "84", "94", "8c", "bc", "ac", "b4", "a4",
-        "a0", "be", "ae", "b6", "a6", "b1", "a9", "a2", "a5", "b5", "ad", "bd", "b9", "a1",
+        "10", "30", "50", "70", "90", "b0", "d0", "f0", "20", "4c", "6c", "18", "38", "b8", "d8",
+        "f8", "c9", "c5", "d5", "cd", "dd", "d9", "c1", "d1", "e0", "e4", "ec", "c0", "c4", "cc",
+        "69", "65", "75", "6d", "7d", "79", "61", "71", "e9", "e5", "f5", "ed", "fd", "f9", "e1",
+        "f1", "49", "45", "55", "4d", "5d", "59", "41", "51", "29", "25", "35", "2d", "3d", "39",
+        "21", "31", "09", "05", "15", "0d", "1d", "19", "01", "11", "aa", "8a", "a8", "98", "ba",
+        "9a", "9d", "85", "a0", "a4", "b4", "ac", "bc", "95", "8d", "99", "81", "91", "86", "96",
+        "8e", "84", "94", "8c", "bc", "ac", "b4", "a4", "a0", "be", "ae", "b6", "a6", "b1", "a9",
+        "a2", "a5", "b5", "ad", "bd", "b9", "a1",
     ];
     for opcode in opcode_to_test {
         println!("Running Test: {opcode}");
