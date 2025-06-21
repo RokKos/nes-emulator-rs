@@ -1,10 +1,12 @@
-# Nesulator
+# NES Emulator  
 
 A NES emulator written in Rust.
 
 ## Goals
 
-This project was started with the following goals in mind:
+The primary goal for me is to play [Super Mario Bros](https://en.wikipedia.org/wiki/Super_Mario_Bros.) on MY emulator and save the princes Peach. 
+
+The tools and techniques used in this project are also choosen because I have these goals in mind. 
 
 -   **Learn Rust:** To gain a deeper understanding and practical experience with the Rust programming language.
 -   **Learn the 6502 CPU and PPU:** To understand the architecture and instruction set of the MOS Technology 6502 processor and the Picture Processing Unit (PPU) used in the NES.
@@ -14,6 +16,7 @@ This project was started with the following goals in mind:
 
 -   **Cycle-Accurate Emulation:** To strive for an emulation that is precise to the clock cycle of the original hardware.
 -   **Cross-Platform:** To ensure the emulator can be compiled and run on various operating systems.
+-   **Debugger:** Have some way to check the internals or the amazing ROM created.
 
 ## Implemented Opcodes
 
