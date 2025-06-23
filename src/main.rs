@@ -649,9 +649,9 @@ impl Chip6502 {
     }
 
     fn addressing_relative(&mut self) -> (Address, Vec<BusOperation>) {
-        let address = self.pc;
+        let read_address = self.bus_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
-        (Address::Relative(5), vec![])
+        (Address::Relative(read_address.value), vec![read_address])
     }
 
     fn addressing_implied(&self, cycles: u8) -> (Address, Vec<BusOperation>) {
@@ -836,8 +836,21 @@ impl Chip6502 {
     }
 
     fn branch_compare(&mut self, address: Address) -> Vec<BusOperation> {
-        let address_value: u16 = match address {
-            Address::Relative(value) => self.pc.wrapping_add(value.into()),
+        let is_carry_set = self.p & (StatusFlag::Carry as u8) != 0;
+        if !is_carry_set {
+            return vec![];
+        }
+
+        match address {
+            Address::Relative(mut value) => {
+                let is_negative = value & (StatusFlag::Negative as u8) != 0;
+                Self::register_flag_set(&mut value, StatusFlag::Negative, false);
+                if is_negative {
+                    self.pc = self.pc.wrapping_sub(value.into());
+                } else {
+                    self.pc = self.pc.wrapping_add(value.into());
+                }
+            }
 
             _ => unreachable!(
                 "Addressing mode {:#?}, not valid for jump operation",
@@ -845,17 +858,15 @@ impl Chip6502 {
             ),
         };
 
-        self.pc = address_value;
         vec![]
     }
-    fn jump_to_subroutine(&mut self, address: Address) -> Vec<BusOperation> {
-        let address_value = match address {
-            Address::Absolute(value) => value,
 
-            _ => unreachable!(
+    fn jump_to_subroutine(&mut self, address: Address) -> Vec<BusOperation> {
+        let Address::Absolute(address_value) = address else {
+             unreachable!(
                 "Addressing mode {:#?}, not valid for jump operation",
                 address
-            ),
+            );
         };
 
         let return_address: u16 = self.pc.wrapping_sub(1);
@@ -877,13 +888,11 @@ impl Chip6502 {
 
     fn jump(&mut self, address: Address) -> Vec<BusOperation> {
         use Address::*;
-        let address_value = match address {
-            Absolute(value) | Indirect(value) => value,
-
-            _ => unreachable!(
+        let (Absolute(address_value) | Indirect(address_value)) = address else {
+            unreachable!(
                 "Addressing mode {:#?}, not valid for jump operation",
                 address
-            ),
+            );
         };
 
         self.pc = address_value;
