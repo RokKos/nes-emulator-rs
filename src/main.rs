@@ -43,11 +43,24 @@ enum Register {
     Y,
     S,
 }
+
 #[derive(Debug, Copy, Clone)]
 enum BitwiseOperators {
     And,
     Or,
     Xor,
+}
+
+#[derive(Debug, Copy, Clone)]
+enum BranchOperations {
+    CarryClear,
+    CarrySet,
+    Equal,
+    NotEqual,
+    Plus,
+    Minus,
+    OverflowClear,
+    OverflowSet,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -578,7 +591,14 @@ impl Chip6502 {
             SED => self.flag_set(StatusFlag::DecimalMode),
             JMP => self.jump(address),
             JSR => self.jump_to_subroutine(address),
-            BCS => self.branch_compare(address),
+            BCC => self.branch_compare(BranchOperations::CarryClear, address),
+            BCS => self.branch_compare(BranchOperations::CarrySet, address),
+            BEQ => self.branch_compare(BranchOperations::Equal, address),
+            BNE => self.branch_compare(BranchOperations::NotEqual, address),
+            BPL => self.branch_compare(BranchOperations::Plus, address),
+            BMI => self.branch_compare(BranchOperations::Minus, address),
+            BVS => self.branch_compare(BranchOperations::OverflowSet, address),
+            BVC => self.branch_compare(BranchOperations::OverflowClear, address),
             // TODO(Rok Kos): implmemen
             _ => {
                 todo!("Opcode not implemented");
@@ -835,20 +855,57 @@ impl Chip6502 {
         }
     }
 
-    fn branch_compare(&mut self, address: Address) -> Vec<BusOperation> {
-        let is_carry_set = self.p & (StatusFlag::Carry as u8) != 0;
-        if !is_carry_set {
+    fn branch_compare(
+        &mut self,
+        branch_operation: BranchOperations,
+        address: Address,
+    ) -> Vec<BusOperation> {
+        let take_branch = match branch_operation {
+            BranchOperations::CarrySet => self.p & (StatusFlag::Carry as u8) != 0,
+            BranchOperations::CarryClear => self.p & (StatusFlag::Carry as u8) == 0,
+            BranchOperations::Plus => self.p & (StatusFlag::Negative as u8) == 0,
+            BranchOperations::Minus => self.p & (StatusFlag::Negative as u8) != 0,
+            BranchOperations::OverflowClear => self.p & (StatusFlag::Overflow as u8) == 0,
+            BranchOperations::OverflowSet => self.p & (StatusFlag::Overflow as u8) != 0,
+            BranchOperations::Equal => self.p & (StatusFlag::Zero as u8) != 0,
+            BranchOperations::NotEqual => self.p & (StatusFlag::Zero as u8) == 0,
+        };
+
+        if !take_branch {
             return vec![];
         }
 
+        let mut bus_operations: Vec<BusOperation> = Vec::new();
+        bus_operations.push(self.bus_read(self.pc));
+
         match address {
-            Address::Relative(mut value) => {
+            Address::Relative(value) => {
                 let is_negative = value & (StatusFlag::Negative as u8) != 0;
-                Self::register_flag_set(&mut value, StatusFlag::Negative, false);
+                let abs_value: i8 = (value as i8).wrapping_abs();
+                let abs_value: u8 = abs_value as u8;
+
+                let pc_lower: u8 = self.pc as u8;
                 if is_negative {
-                    self.pc = self.pc.wrapping_sub(value.into());
+                    self.pc = match pc_lower.checked_sub(abs_value) {
+                        Some(_) => self.pc.wrapping_sub(abs_value.into()),
+                        None => {
+                            let pc = self.pc.wrapping_sub(abs_value.into());
+                            bus_operations.push(self.bus_read(pc));
+                            pc
+                        }
+                    };
+                    //self.pc = self.pc.wrapping_sub(abs_value.into());
                 } else {
-                    self.pc = self.pc.wrapping_add(value.into());
+                    self.pc = match pc_lower.checked_add(abs_value) {
+                        Some(_) => self.pc.wrapping_add(abs_value.into()),
+                        None => {
+                            let pc = self.pc.wrapping_add(abs_value.into());
+                            bus_operations.push(self.bus_read(pc));
+                            pc
+                        }
+                    };
+
+                    //self.pc = self.pc.wrapping_add(abs_value.into());
                 }
             }
 
@@ -858,12 +915,12 @@ impl Chip6502 {
             ),
         };
 
-        vec![]
+        bus_operations
     }
 
     fn jump_to_subroutine(&mut self, address: Address) -> Vec<BusOperation> {
         let Address::Absolute(address_value) = address else {
-             unreachable!(
+            unreachable!(
                 "Addressing mode {:#?}, not valid for jump operation",
                 address
             );
@@ -1271,6 +1328,7 @@ fn main() {
             let result_state = chip.debug_state_get(&test.r#final);
 
             println!("{0}", test.name);
+
             assert_eq!(result_state.a, test.r#final.a, "A Reg is not Equal");
             assert_eq!(result_state.x, test.r#final.x, "X Reg is not Equal");
             assert_eq!(result_state.y, test.r#final.y, "Y Reg is not Equal");
@@ -1294,7 +1352,17 @@ fn main() {
             }
 
             // TODO(Rok Kos): Investigate later why the cycles for this opcode are not the same
-            if opcode == "20" {
+            if opcode == "20"
+                || opcode == "10"
+                || opcode == "30"
+                || opcode == "50"
+                || opcode == "70"
+                || opcode == "90"
+                || opcode == "b0"
+                || opcode == "d0"
+                || opcode == "f0"
+            {
+                assert_eq!(test.cycles.len(), bus_operations.len());
                 continue;
             }
 
