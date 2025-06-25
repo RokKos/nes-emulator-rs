@@ -1,14 +1,3 @@
-#![deny(dead_code, unsafe_code, unused_must_use, clippy::all, clippy::nursery)]
-#![allow(
-    clippy::panic,
-    clippy::missing_docs_in_private_items,
-    clippy::option_if_let_else,
-    clippy::too_many_lines,
-    clippy::enum_glob_use,
-    clippy::unreachable,
-    clippy::unnecessary_wraps
-)]
-
 use serde::Deserialize;
 use std::{fs::File, path::Path};
 
@@ -155,6 +144,7 @@ struct Chip6502 {
     instruction_table: [Instruction; INSTRUCTION_COUNT as usize],
 }
 
+#[allow(clippy::indexing_slicing)]
 impl Chip6502 {
     const fn power_up() -> Self {
         Self {
@@ -168,7 +158,8 @@ impl Chip6502 {
             instruction_table: Self::build_instruction_table(),
         }
     }
-
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::enum_glob_use)]
     const fn build_instruction_table() -> [Instruction; 256] {
         use AddressingMode::*;
         use Opcode::*;
@@ -524,6 +515,8 @@ impl Chip6502 {
         table
     }
 
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::enum_glob_use)]
     fn run_op(&mut self) -> Vec<BusOperation> {
         use Opcode::*;
         use Register::*;
@@ -625,15 +618,16 @@ impl Chip6502 {
         };
 
         if instruction.cycle_count as usize > bus_operations.len().wrapping_add(1) {
-            println!("here 1");
             bus_operations.push(dummy_read);
         }
 
         if instruction.opcode == NOP && instruction.cycle_count as usize > bus_operations.len() {
-            println!("here");
-            let filler_cycles_len: usize = instruction.cycle_count as usize - bus_operations.len();
+            let filler_cycles_len: usize = (instruction.cycle_count as usize)
+                .overflowing_sub(bus_operations.len())
+                .0;
 
             for i in 0..filler_cycles_len {
+                #[allow(clippy::cast_possible_truncation)]
                 bus_operations.push(self.bus_read(self.pc.wrapping_add(i as u16)));
             }
         }
@@ -892,28 +886,31 @@ impl Chip6502 {
         match address {
             Address::Relative(value) => {
                 let is_negative = value & (StatusFlag::Negative as u8) != 0;
+
+                // TODO(Rok Kos): this is ugly as f*** try to make it more idiomatic and safe
+                #[allow(clippy::cast_possible_wrap)]
                 let abs_value: i8 = (value as i8).wrapping_abs();
+                #[allow(clippy::cast_sign_loss)]
                 let abs_value: u8 = abs_value as u8;
 
+                #[allow(clippy::cast_possible_truncation)]
                 let pc_lower: u8 = self.pc as u8;
                 if is_negative {
-                    self.pc = match pc_lower.checked_sub(abs_value) {
-                        Some(_) => self.pc.wrapping_sub(abs_value.into()),
-                        None => {
-                            let pc = self.pc.wrapping_sub(abs_value.into());
-                            bus_operations.push(self.bus_read(pc));
-                            pc
-                        }
+                    self.pc = if pc_lower.checked_sub(abs_value).is_some() {
+                        self.pc.wrapping_sub(abs_value.into())
+                    } else {
+                        let pc = self.pc.wrapping_sub(abs_value.into());
+                        bus_operations.push(self.bus_read(pc));
+                        pc
                     };
                     //self.pc = self.pc.wrapping_sub(abs_value.into());
                 } else {
-                    self.pc = match pc_lower.checked_add(abs_value) {
-                        Some(_) => self.pc.wrapping_add(abs_value.into()),
-                        None => {
-                            let pc = self.pc.wrapping_add(abs_value.into());
-                            bus_operations.push(self.bus_read(pc));
-                            pc
-                        }
+                    self.pc = if pc_lower.checked_add(abs_value).is_some() {
+                        self.pc.wrapping_add(abs_value.into())
+                    } else {
+                        let pc = self.pc.wrapping_add(abs_value.into());
+                        bus_operations.push(self.bus_read(pc));
+                        pc
                     };
 
                     //self.pc = self.pc.wrapping_add(abs_value.into());
@@ -944,6 +941,7 @@ impl Chip6502 {
         let stack_write_high = self.bus_write(stack_address, return_address_high);
         self.s = self.s.wrapping_sub(1);
 
+        #[allow(clippy::cast_possible_truncation)]
         let return_address_low: u8 = return_address as u8;
         let stack_address: u16 = u16::from(self.s).wrapping_add(0x0100);
         let stack_write_low = self.bus_write(stack_address, return_address_low);
@@ -954,6 +952,7 @@ impl Chip6502 {
         vec![stack_write_high, stack_write_low]
     }
 
+    #[allow(clippy::enum_glob_use)]
     fn jump(&mut self, address: Address) -> Vec<BusOperation> {
         use Address::*;
         let (Absolute(address_value) | Indirect(address_value)) = address else {
@@ -967,6 +966,7 @@ impl Chip6502 {
         vec![]
     }
 
+    #[allow(clippy::enum_glob_use)]
     fn register_compare(&mut self, register: Register, address: Address) -> Vec<BusOperation> {
         use Address::*;
         let address_value = match address {
@@ -1004,6 +1004,7 @@ impl Chip6502 {
         vec![read_address]
     }
 
+    #[allow(clippy::enum_glob_use)]
     fn sbc(&mut self, address: Address) -> Vec<BusOperation> {
         use Address::*;
         let address_value = match address {
@@ -1040,6 +1041,7 @@ impl Chip6502 {
         vec![read_address]
     }
 
+    #[allow(clippy::enum_glob_use)]
     fn adc(&mut self, address: Address) -> Vec<BusOperation> {
         use Address::*;
         let address_value = match address {
@@ -1076,6 +1078,7 @@ impl Chip6502 {
         vec![read_address]
     }
 
+    #[allow(clippy::enum_glob_use)]
     fn bitwise_operation(
         &mut self,
         operator: BitwiseOperators,
@@ -1121,6 +1124,7 @@ impl Chip6502 {
         vec![read_address]
     }
 
+    #[allow(clippy::enum_glob_use)]
     fn register_load(&mut self, register: Register, address: Address) -> Vec<BusOperation> {
         use Address::*;
         let address_value = match address {
@@ -1180,6 +1184,7 @@ impl Chip6502 {
         vec![]
     }
 
+    #[allow(clippy::enum_glob_use)]
     fn register_save(&mut self, register: Register, address: Address) -> Vec<BusOperation> {
         use Address::*;
         let address_value = match address {
@@ -1306,7 +1311,56 @@ struct TestNES6502 {
     cycles: Vec<(u16, u8, String)>,
 }
 
+// #[derive(Debug)]
+// enum NESRomType {
+//     INes,
+//     Nes2,
+// }
+// #[derive(Debug)]
+// struct NESRom {
+//     rom_type: NESRomType,
+//     // header: Vec<u8>,
+//     // trainer: Option<Vec<u8>>,
+//     // prg_rom: Vec<u8>,
+//     // chr_rom: Vec<u8>,
+//     // misc_rom: Vec<u8>,
+// }
+//
+// fn read_rom(file_name: &str) -> NESRom {
+//     let bytes: Vec<u8> = match std::fs::read(file_name) {
+//         Ok(t) => t,
+//         Err(e) => panic!("File Error: Could not open the NES ROM file. Reason: {e}",),
+//     };
+//
+//     assert_eq!(bytes[0], b'N');
+//     assert_eq!(bytes[1], b'E');
+//     assert_eq!(bytes[2], b'S');
+//     assert_eq!(bytes[3], 0x1A);
+//
+//     let mut rom_type = NESRomType::INes;
+//
+//     if (bytes[7] & 0b0000_1100) == 0b0000_1000 {
+//         rom_type = NESRomType::Nes2;
+//     }
+//
+//     let mut trainer_exists = false;
+//     if (bytes[6] & 0b0000_0100) == 0b0000_0100 {
+//         trainer_exists = true;
+//     }
+//
+//     for byte in &bytes {
+//         println!("{byte:b}");
+//     }
+//
+//     NESRom { rom_type }
+// }
+
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::panic)]
 fn main() {
+    //let rom_path = "./test/roms/Best NES Games/Donkey Kong/Donkey Kong (World) (Rev 1).nes";
+    //let nes_rom = read_rom(rom_path);
+
     let opcode_to_test: Vec<&str> = vec![
         "9d", "ea", "1a", "3a", "5a", "7a", "da", "fa", "80", "82", "89", "c2", "e2", "04", "44",
         "64", "14", "34", "54", "74", "d4", "f4", "0c", "1c", "3c", "5c", "7c", "dc", "fc", "10",
@@ -1405,6 +1459,7 @@ fn main() {
             }
 
             for (i, (address, value, bus_type)) in test.cycles.iter().enumerate() {
+                #[allow(clippy::indexing_slicing)]
                 let bus_operation = &bus_operations[i];
 
                 assert_eq!(

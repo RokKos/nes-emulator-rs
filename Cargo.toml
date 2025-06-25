@@ -3,34 +3,64 @@ name = "NES_emulator_rust"
 version = "0.1.0"
 edition = "2021"
 
+description = "A Nintendo Entertainment System emulator written in Rust."
+license = "Apache-2.0"
+repository = "https://github.com/your_username/your_repo"
+keywords = ["emulator", "nes", "retro"]
+categories = ["emulators"]
+
 [features]
 strict = []
 
-[lints.clippy]
-correctness = "deny"
-suspicious = "deny"
-
-style = "deny"
-perf = "deny"
-complexity = "deny"
-
-pedantic = "deny" # Start with warn and deny specific lints as you see fit
-# Restriction lints
-arithmetic_side_effects = "deny"
-expect_used = "deny"
-get_unwrap = "deny"
-panic = "deny"
-unreachable = "deny"
-
-# Pedantic lints
-cast_possible_truncation = "deny"
-cast_possible_wrap = "deny"
-cast_precision_loss = "deny"
-cast_sign_loss = "deny"
-must_use_candidate = "deny"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 colored = "2.1.0"
 
+
+[lints.rust]
+unsafe_code = { level = "deny", priority = -1 }
+future_incompatible = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+rust_2024_compatibility = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+
+# === Recommend, but don't force, best practices ===
+# Warn about missing documentation and debug implementations.
+# You can change these to "deny" for a library crate.
+missing_docs = "allow"
+missing_debug_implementations = "warn"
+
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+
+style = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+
+arithmetic_side_effects = "deny"
+float_arithmetic = "deny"
+expect_used = "deny"
+get_unwrap = "deny"
+unwrap_used = "deny"
+panic = "deny"
+
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_precision_loss = "deny"
+cast_sign_loss = "deny"
+must_use_candidate = "deny"
+indexing_slicing = "deny"
+todo = "allow"
+
+too_many_lines = "allow"
+unreachable = "allow"
