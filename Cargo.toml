@@ -2,6 +2,7 @@
 name = "NES_emulator_rust"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 
 description = "A Nintendo Entertainment System emulator written in Rust."
 license = "Apache-2.0"
@@ -17,6 +18,13 @@ strict = []
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 colored = "2.1.0"
+
+egui = "0.31"
+eframe = { version = "0.31", default-features = false, features = [
+    "default_fonts", # Embed the default egui fonts.
+    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
+] }
+
 
 
 [lints.rust]
@@ -64,3 +72,5 @@ todo = "allow"
 
 too_many_lines = "allow"
 unreachable = "allow"
+multiple_crate_versions="allow"
+missing_panics_doc="allow"
