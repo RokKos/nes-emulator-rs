@@ -9,6 +9,7 @@ dependencies = [
  "colored",
  "eframe",
  "egui",
+ "egui_memory_editor",
  "serde",
  "serde_json",
 ]
@@ -489,6 +490,15 @@ dependencies = [
  "profiling",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "egui_memory_editor"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59f93ebcd7ed4d06f3a7fb4f064d6872d473c3171056f09845011e53f31f18c4"
+dependencies = [
+ "egui",
 ]
 
 [[package]]

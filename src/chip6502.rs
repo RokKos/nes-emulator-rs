@@ -25,7 +25,7 @@ pub struct BusOperation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Register {
+pub enum Register {
     A,
     X,
     Y,
@@ -52,7 +52,7 @@ enum BranchOperations {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum AddressingMode {
+pub enum AddressingMode {
     Implied,
     Immediate,
     ZeroPage,
@@ -101,12 +101,12 @@ pub enum Opcode {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Instruction {
-    opcode: Opcode,
-    adressing_mode: AddressingMode,
+    pub opcode: Opcode,
+    pub adressing_mode: AddressingMode,
     // NOTE(Rok Kos): this is the least amount of cycles, we have this so that we
     // can insert the dummy read or writes. Because every cycle in NES is bus operation
-    cycle_count: u8,
-    format: &'static str,
+    pub cycle_count: u8,
+    pub format: &'static str,
 }
 
 impl Instruction {
@@ -134,14 +134,14 @@ const INSTRUCTION_COUNT: u16 = 256;
 
 #[derive(Debug)]
 pub struct Chip6502 {
-    a: u8,
-    x: u8,
-    y: u8,
-    s: u8,
-    p: u8,
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub s: u8,
+    pub p: u8,
     pub pc: u16,
-    ram: Box<[u8]>,
-    instruction_table: [Instruction; INSTRUCTION_COUNT as usize],
+    pub ram: Box<[u8]>,
+    pub instruction_table: [Instruction; INSTRUCTION_COUNT as usize],
 }
 
 #[allow(clippy::indexing_slicing)]

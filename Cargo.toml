@@ -20,6 +20,7 @@ serde_json = "1.0"
 colored = "2.1.0"
 
 egui = "0.31"
+egui_memory_editor = "0.2.0"
 eframe = { version = "0.31", default-features = false, features = [
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
@@ -39,7 +40,7 @@ unused = { level = "deny", priority = -1 }
 # Warn about missing documentation and debug implementations.
 # You can change these to "deny" for a library crate.
 missing_docs = "allow"
-missing_debug_implementations = "warn"
+missing_debug_implementations = "allow"
 
 
 [lints.clippy]
@@ -74,3 +75,5 @@ too_many_lines = "allow"
 unreachable = "allow"
 multiple_crate_versions="allow"
 missing_panics_doc="allow"
+explicit_iter_loop="allow"
+
