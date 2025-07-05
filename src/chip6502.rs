@@ -287,11 +287,11 @@ impl Chip6502 {
         table[0xC0] = i(CPY, Immediate, 2, "CPY #{}");
         table[0xC4] = i(CPY, ZeroPage, 3, "CPY {}");
         table[0xCC] = i(CPY, Absolute, 4, "CPY {}");
-        /*
-            // BIT - Bit Test
-            table[0x24] = i(BIT, ZeroPage, 3, "BIT {}");
-            table[0x2C] = i(BIT, Absolute, 4, "BIT {}");
+        // BIT - Bit Test
+        table[0x24] = i(BIT, ZeroPage, 3, "BIT {}");
+        table[0x2C] = i(BIT, Absolute, 4, "BIT {}");
 
+        /*
             // --- Shift and Rotate Operations ---
 
             // ASL - Arithmetic Shift Left
@@ -611,6 +611,7 @@ impl Chip6502 {
             BMI => self.branch_compare(BranchOperations::Minus, address),
             BVS => self.branch_compare(BranchOperations::OverflowSet, address),
             BVC => self.branch_compare(BranchOperations::OverflowClear, address),
+            BIT => self.bit(address),
             NOP => Self::nop(),
             // TODO(Rok Kos): implmemen
             _ => {
@@ -859,6 +860,31 @@ impl Chip6502 {
 
     const fn nop() -> Vec<BusOperation> {
         vec![]
+    }
+
+    fn bit(&mut self, address: Address) -> Vec<BusOperation> {
+        let address_value: u16 = match address {
+            Address::Absolute(value) => value,
+            Address::ZeroPage(value) => value.into(),
+
+            _ => {
+                unreachable!(
+                    "Addressing mode {:#?}, not valid for register compare",
+                    address
+                )
+            }
+        };
+
+        let read_address = self.bus_read(address_value);
+        let result = self.a & read_address.value;
+
+        Self::register_flag_set(&mut self.p, StatusFlag::Zero, result == 0);
+        let is_negative = (read_address.value & StatusFlag::Negative as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Negative, is_negative);
+        let is_overflow = (read_address.value & StatusFlag::Overflow as u8) != 0;
+        Self::register_flag_set(&mut self.p, StatusFlag::Overflow, is_overflow);
+
+        vec![read_address]
     }
 
     fn branch_compare(
