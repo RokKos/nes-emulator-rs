@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use egui::{Color32, ColorImage, ImageData, TextureHandle, TextureOptions};
 use egui_memory_editor::MemoryEditor;
 
 use crate::chip6502::{Instruction, Opcode};
@@ -6,24 +9,26 @@ use crate::Chip6502;
 pub struct MyEguiApp {
     chip: Chip6502,
     memory_editor: MemoryEditor,
-}
-
-impl Default for MyEguiApp {
-    fn default() -> Self {
-        Self {
-            chip: Chip6502::power_up(),
-            // Initialize the memory editor. We can set a specific address range to view.
-            memory_editor: MemoryEditor::new().with_address_range("All", 0..0xFFFF),
-        }
-    }
+    screen_texture: TextureHandle,
 }
 
 impl MyEguiApp {
     /// Called once before the first frame.
     #[must_use]
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // You can customize egui here (fonts, visuals) if needed.
-        Self::default()
+
+        let screen_texture = cc.egui_ctx.load_texture(
+            "screen",
+            ImageData::Color(Arc::new(ColorImage::new([320, 80], Color32::TRANSPARENT))),
+            TextureOptions::default(),
+        );
+
+        Self {
+            chip: Chip6502::power_up(),
+            memory_editor: MemoryEditor::new().with_address_range("All", 0..0xFFFF),
+            screen_texture, // Directly initialize screen_texture here
+        }
     }
 }
 
@@ -54,6 +59,25 @@ impl eframe::App for MyEguiApp {
             ui.label(
                 "You could add execution controls (step, run, stop) or other analysis tools here.",
             );
+
+            egui::ScrollArea::both().show(ui, |ui| {
+                // This should obviously not be here, but it's just a test
+                let mut img = ColorImage::new([400, 400], Color32::RED);
+                for x in 15..=17 {
+                    for y in 8..24 {
+                        img[(x, y)] = Color32::BLUE;
+                        img[(y, x)] = Color32::GREEN;
+                    }
+                }
+                self.screen_texture
+                    .set(ColorImage::from(img), TextureOptions::default());
+                ui.add(
+                    egui::Image::new(&self.screen_texture)
+                        .max_height(400.0)
+                        .max_width(500.0)
+                        .corner_radius(10.0),
+                );
+            });
         });
 
         // --- Memory Editor Window ---
